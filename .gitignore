@@ -29,3 +29,6 @@ scratch/
 .DS_Store
 Thumbs.db
 *.log
+.agents/
+.vscode/
+.idea/

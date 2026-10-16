@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Data files (CSVs and ZIPs are heavy; downloaded automatically via scripts/download_data.py)
+data/*.csv
+data/*.zip
+data/temp_*
+
+# Explicitly keep lightweight pre-aggregated dashboard data & cartography
+!data/argentina-provincias.geojson
+!data/dashboard_data.json
+
+# Scratch and internal temporary files
+scratch/
+.tempmediaStorage/
+
+# Environments and OS
+.DS_Store
+Thumbs.db
+*.log

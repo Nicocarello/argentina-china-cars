@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor Histórico de Marcas Chinas en Argentina (2018 - 2026) | DNRPA</title>
+    <meta name="description" content="Dashboard interactivo de adopción, electrificación y distribución territorial de vehículos 0km de marcas chinas en Argentina desde 2018 hasta 2026 (DNRPA).">
+    
+    <!-- Google Fonts: Plus Jakarta Sans -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Plotly.js CDN -->
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    
+    <!-- Chart.js CDN for responsive micro-charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Background glowing ambient orbs -->
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+
+    <div class="app-wrapper">
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="nav-brand">
+                <div class="brand-icon">🇨🇳</div>
+                <div class="brand-text">
+                    <h1>ARGENTINA <span>AUTO MONITOR</span></h1>
+                    <span class="brand-tag">DNRPA • HISTÓRICO OFICIAL 2018 - 2026</span>
+                </div>
+            </div>
+            
+            <div class="nav-actions">
+                <div class="live-badge">
+                    <span class="pulsing-dot"></span>
+                    <span id="nav-badge-text">SERIE HISTÓRICA COMPLETA (2018 - 2026)</span>
+                </div>
+                <button class="btn-theme-toggle" id="btn-theme-toggle" title="Alternar entre tema Claro y Oscuro" aria-label="Cambiar tema">
+                    <span class="theme-icon" id="theme-icon">🌙</span>
+                    <span class="theme-text" id="theme-text">Modo Oscuro</span>
+                </button>
+                <a href="https://github.com/Nicocarello/argentina-china-cars" target="_blank" class="btn-github" id="github-link">
+                    <svg height="18" width="18" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                    </svg>
+                    <span>GitHub</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Title Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <span class="section-pill">TRANSICIÓN ENERGÉTICA Y DISRUPCIÓN DE MERCADO (2018 - 2026)</span>
+                <h2 class="hero-title">La Conquista de las <span class="gradient-text">Marcas Chinas</span> en Argentina</h2>
+                <p class="hero-subtitle">
+                    Explora de forma interactiva la trayectoria temporal desde 2018 hasta 2026: penetración territorial en las 24 provincias, el salto histórico de BYD, la electrificación de la flota y los enclaves urbanos con mayorías absolutas.
+                </p>
+            </div>
+        </section>
+
+        <!-- Interactive Timeline & Scrubber Controller -->
+        <section class="timeline-controller glass-panel">
+            <div class="timeline-header">
+                <div class="timeline-title">
+                    <span class="controller-icon">⏳</span>
+                    <div>
+                        <h3>Período Temporal de Análisis</h3>
+                        <p id="timeline-current-label">Mostrando: <b>Año 2026 • Acumulado Total</b></p>
+                    </div>
+                </div>
+                
+                <div class="timeline-playback">
+                    <button id="btn-play-animation" class="btn-playback" title="Reproducir evolución mensual automática">
+                        <span id="play-icon">▶</span>
+                        <span id="play-text">Evolución Animada</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Year selection bar -->
+            <div class="timeline-row">
+                <span class="row-label">AÑO:</span>
+                <div class="year-pills" id="year-pills-container">
+                    <!-- Populated dynamically: 2018 .. 2026 -->
+                </div>
+            </div>
+
+            <!-- Month selection pills -->
+            <div class="timeline-row">
+                <span class="row-label">MES:</span>
+                <div class="month-pills" id="month-pills-container">
+                    <!-- Populated dynamically based on selected year -->
+                </div>
+            </div>
+        </section>
+
+        <!-- KPI Scorecard Cards -->
+        <section class="kpi-grid">
+            <div class="kpi-card glass-panel" id="card-total">
+                <div class="kpi-header">
+                    <span class="kpi-label">Total Inscripciones 0km</span>
+                    <span class="kpi-icon">🚗</span>
+                </div>
+                <div class="kpi-value" id="kpi-total-val">--</div>
+                <div class="kpi-subtext" id="kpi-total-sub">Mercado total país en el período</div>
+            </div>
+
+            <div class="kpi-card glass-panel highlight-red" id="card-chinos">
+                <div class="kpi-header">
+                    <span class="kpi-label">Patentamientos Marcas Chinas</span>
+                    <span class="kpi-icon">🇨🇳</span>
+                </div>
+                <div class="kpi-value text-red" id="kpi-chinos-val">--</div>
+                <div class="kpi-subtext" id="kpi-chinos-sub">Unidades patentadas en el período</div>
+            </div>
+
+            <div class="kpi-card glass-panel highlight-accent" id="card-share">
+                <div class="kpi-header">
+                    <span class="kpi-label">Cuota de Mercado (Market Share)</span>
+                    <span class="kpi-icon">📈</span>
+                </div>
+                <div class="kpi-value text-accent" id="kpi-share-val">--%</div>
+                <div class="kpi-subtext" id="kpi-share-sub">Penetración dentro del total país</div>
+            </div>
+
+            <div class="kpi-card glass-panel highlight-cyan" id="card-leader">
+                <div class="kpi-header">
+                    <span class="kpi-label">Marca Líder del Bloque</span>
+                    <span class="kpi-icon">⚡</span>
+                </div>
+                <div class="kpi-value text-cyan" id="kpi-leader-val">--</div>
+                <div class="kpi-subtext" id="kpi-leader-sub">Mayor volumen en el período</div>
+            </div>
+        </section>
+
+        <!-- Main Workspace: Interactive Map & Deep Dive Section -->
+        <main class="dashboard-body">
+            <!-- Left Side: Interactive Map Container -->
+            <div class="map-column">
+                <div class="card glass-panel map-card">
+                    <div class="card-header">
+                        <div>
+                            <h3 class="card-title">Mapa de Penetración Provincial y Detalle CABA</h3>
+                            <p class="card-desc">Pasa el cursor sobre cada provincia para ver métricas. La Ciudad de Buenos Aires se muestra ampliada a la derecha.</p>
+                        </div>
+                        <div class="map-legend-indicator">
+                            <span class="legend-scale">0%</span>
+                            <div class="legend-gradient"></div>
+                            <span class="legend-scale" id="map-legend-max">15%+</span>
+                        </div>
+                    </div>
+                    
+                    <div id="plotly-map-container" class="map-render-area">
+                        <div class="loading-spinner" id="map-spinner">
+                            <div class="spinner"></div>
+                            <p>Cargando cartografía oficial IGN / Georef...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="map-footer-tip">
+                        <span>💡 <b>Tip de interacción:</b> CABA tiene su tarjeta independiente a la derecha conectada por la línea de referencia para una inspección precisa.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Regional Insights & Rankings -->
+            <div class="insights-column">
+                <!-- Province Details Card (Active on hover or top ranking) -->
+                <div class="card glass-panel ranking-card">
+                    <div class="card-header">
+                        <h3 class="card-title">Ranking Provincial de Penetración</h3>
+                        <span class="badge-pill" id="badge-jurisdicciones">24 Jurisdicciones</span>
+                    </div>
+                    <div class="table-scroll-container">
+                        <table class="ranking-table" id="provinces-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Jurisdicción</th>
+                                    <th>Share %</th>
+                                    <th>Chinos (u)</th>
+                                    <th>Total 0km</th>
+                                </tr>
+                            </thead>
+                            <tbody id="provinces-table-body">
+                                <!-- Populated dynamically by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Electrification breakdown card -->
+                <div class="card glass-panel eco-card">
+                    <div class="card-header">
+                        <div>
+                            <h3 class="card-title">Monopolio de la Electrificación</h3>
+                            <p class="card-desc">Mix de propulsión: Chinos vs Tradicionales</p>
+                        </div>
+                        <span class="tech-badge">60% ECO</span>
+                    </div>
+
+                    <div class="powertrain-bars">
+                        <div class="pt-item">
+                            <div class="pt-labels">
+                                <span>Híbridos / HEV</span>
+                                <b>31.7% Chinos vs 2.1% Tradicional</b>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill fill-hev" style="width: 31.7%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-item">
+                            <div class="pt-labels">
+                                <span>Híbridos Enchufables / PHEV</span>
+                                <b>18.9% Chinos vs 0.4% Tradicional</b>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill fill-phev" style="width: 18.9%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-item">
+                            <div class="pt-labels">
+                                <span>100% Eléctricos Puros / BEV</span>
+                                <b>9.3% Chinos vs 0.1% Tradicional</b>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill fill-bev" style="width: 9.3%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="pt-item">
+                            <div class="pt-labels">
+                                <span>Combustión Tradicional / ICE</span>
+                                <b>40.2% Chinos vs 97.4% Tradicional</b>
+                            </div>
+                            <div class="progress-track">
+                                <div class="progress-fill fill-ice" style="width: 40.2%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Secondary Section: Charts & Competitor Dynamics -->
+        <section class="charts-grid">
+            <!-- Chart 1: Evolution Area Chart (with Toggle: Mensual vs Macro Multianual) -->
+            <div class="card glass-panel chart-card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title" id="chart-evolution-title">Evolución de Penetración y Patentamientos</h3>
+                        <p class="card-desc" id="chart-evolution-desc">Dinámica de mercado en el tiempo</p>
+                    </div>
+                    <div class="chart-toggle-group">
+                        <button class="toggle-btn active" id="btn-toggle-annual">Mensual</button>
+                        <button class="toggle-btn" id="btn-toggle-macro">Macro (2018-2026)</button>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="chart-evolution"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Top Brands Market Share Bar/Donut -->
+            <div class="card glass-panel chart-card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Distribución por Marca (Top Fabricantes)</h3>
+                        <p class="card-desc">Participación relativa dentro del volumen chino</p>
+                    </div>
+                </div>
+                <div class="chart-canvas-wrapper">
+                    <canvas id="chart-brands"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 3: Top 10 Best Selling Models -->
+            <div class="card glass-panel chart-card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Top Modelos Chinos Más Vendidos</h3>
+                        <p class="card-desc">Con etiqueta de motorización tecnológica</p>
+                    </div>
+                </div>
+                <div class="models-list" id="models-list-container">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <!-- Chart 4: Seccionales Pareto & Clusters -->
+            <div class="card glass-panel chart-card">
+                <div class="card-header">
+                    <div>
+                        <h3 class="card-title">Concentración Comercial (Registros Seccionales)</h3>
+                        <p class="card-desc">Seccionales con mayor volumen y mayorías absolutas</p>
+                    </div>
+                </div>
+                <div class="seccionales-list" id="seccionales-list-container">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer Section -->
+        <footer class="app-footer">
+            <div class="footer-left">
+                <p><b>Monitor Automotor Argentino</b> • Desarrollado con datos abiertos de la Dirección Nacional de los Registros Nacionales de la Propiedad del Automotor (DNRPA).</p>
+                <p class="footer-sub">Licencia de datos Creative Commons CC-BY-4.0 • Serie histórica completa 2018 - 2026.</p>
+            </div>
+            <div class="footer-right">
+                <a href="https://datos.gob.ar/dataset/inscripciones-iniciales-de-autos" target="_blank" class="footer-link">Fuente: datos.gob.ar</a>
+                <a href="#github-link" class="footer-link">Documentación Técnica</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Application Logic Script -->
+    <script src="app.js?v=2"></script>
+</body>
+</html>

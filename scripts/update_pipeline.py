@@ -97,6 +97,30 @@ DASHBOARD_FILE = "data/dashboard_data.json"
 CURRENT_YEAR_FALLBACK_URL = "https://datos.jus.gob.ar/dataset/37c9ad39-f092-44be-9b7f-1201b3c4b7a8/resource/f854085c-73e9-447f-b725-6226b81a1caf/download/dnrpa-inscripciones-iniciales-autos-2026.zip"
 
 
+AVAILABLE_SEGMENTS = [
+    {
+        'id': 'TOTAL',
+        'label': '🚗 Todo el Mercado',
+        'desc': 'Totalidad de inscripciones (incluye pesados y comerciales)'
+    },
+    {
+        'id': 'GENTE',
+        'label': '👥 Autos de la Gente',
+        'desc': 'Autos, SUVs y Pick-ups (excluye camiones y colectivos)'
+    },
+    {
+        'id': 'SUVS_AUTOS',
+        'label': '✨ Solo Autos y SUVs',
+        'desc': 'Vehículos familiares de pasajeros (excluye pick-ups)'
+    },
+    {
+        'id': 'PICKUPS',
+        'label': '🛻 Pick-ups y Camionetas',
+        'desc': 'Camionetas particulares y de trabajo liviano'
+    }
+]
+
+
 def clasificar_powertrain(desc: str) -> str:
     d = str(desc).upper()
     if any(k in d for k in ['DOLPHIN', 'YUAN PLUS', 'HAN EV', 'TANG EV', 'ORCA', 'E-STAR', 'SEAL']):
@@ -108,80 +132,44 @@ def clasificar_powertrain(desc: str) -> str:
     return 'ICE (Combustión)'
 
 
-def obtener_url_recurso_anio(year: int) -> str:
-    """Consulta la API de datos.gob.ar para obtener el enlace de descarga del año."""
-    try:
-        req = urllib.request.Request(CKAN_PACKAGE_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=12) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            if data.get('success'):
-                for r in data['result'].get('resources', []):
-                    name = r.get('name', '')
-                    url = r.get('url', '')
-                    if str(year) in name and url.endswith('.zip'):
-                        return url
-    except Exception as e:
-        print(f"[!] Nota API CKAN: {e}. Usando URL de respaldo.")
-    
-    return CURRENT_YEAR_FALLBACK_URL
+def clasificar_segmento_base(tipo_desc: str) -> str:
+    """Clasifica el tipo de carrocería según la terminología de DNRPA."""
+    t = str(tipo_desc).strip().upper()
+    if any(k in t for k in ['RURAL', 'TODO TERRENO']):
+        return 'SUVS'
+    if any(k in t for k in ['SEDAN', 'COUPE', 'CABRIOLET', 'HATCH', 'BERLINA', 'LIMOUSINE']):
+        return 'AUTOS'
+    if any(k in t for k in ['PICK-UP', 'PICK UP']):
+        return 'PICKUPS'
+    return 'PESADOS_OTROS'
 
 
-def procesar_dataframe_anio(df_year: pd.DataFrame, year: int) -> dict:
-    """Procesa el dataframe y calcula todas las métricas agregadas."""
-    df_year = df_year.copy()
-    df_year['tramite_fecha'] = pd.to_datetime(df_year['tramite_fecha'], errors='coerce')
-    df_year['mes'] = df_year['tramite_fecha'].dt.to_period('M').astype(str)
-    
-    marca_norm = df_year['automotor_marca_descripcion'].astype(str).str.strip().str.upper()
-    df_year['marca_normalizada'] = marca_norm
-    df_year['es_chino'] = marca_norm.isin(MARCAS_OBJETIVO)
-    
-    if 'titular_porcentaje_titularidad' in df_year.columns:
-        pct = pd.to_numeric(df_year['titular_porcentaje_titularidad'], errors='coerce').fillna(100)
-        pct = np.where((pct <= 0) | (pct > 100), 100, pct)
-        df_year['unidad'] = pct / 100.0
-    else:
-        df_year['unidad'] = 1.0
-    df_year['unidad_china'] = df_year['unidad'] * df_year['es_chino']
-    
-    prov_norm = (
-        df_year['registro_seccional_provincia'].astype(str).str.strip().str.upper()
-        .str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
-    )
-    df_year['provincia_mapa'] = prov_norm.map(MAPA_NOMBRES)
-    
-    df_year['modelo_completo'] = (
-        df_year['marca_normalizada'] + ' ' + 
-        df_year['automotor_modelo_descripcion'].astype(str).str.strip().str.upper()
-    )
-    df_year['powertrain'] = df_year['modelo_completo'].apply(clasificar_powertrain)
-    
-    meses_presentes = sorted([m for m in df_year['mes'].dropna().unique() if m.startswith(str(year))])
-    periodos = ['ALL'] + meses_presentes
-    
-    year_output = {
-        'meses': meses_presentes,
+def process_segment_slice(sub_df: pd.DataFrame, periodos: list) -> dict:
+    """Procesa un subconjunto de datos filtrado por segmento."""
+    slice_output = {
         'periodos': {},
         'historico_mensual': []
     }
     
-    # Histórico mensual del año
-    hist = df_year.groupby('mes', as_index=False).agg(
+    if len(sub_df) == 0:
+        return slice_output
+
+    # Histórico mensual del segmento
+    hist = sub_df.groupby('mes', as_index=False).agg(
         total=('unidad', 'sum'),
         chinos=('unidad_china', 'sum')
     ).sort_values('mes')
     hist['share'] = np.where(hist['total'] > 0, (hist['chinos'] / hist['total']) * 100, 0)
-    
     for _, r in hist.iterrows():
-        year_output['historico_mensual'].append({
+        slice_output['historico_mensual'].append({
             'mes': r['mes'],
             'total': int(round(r['total'])),
             'chinos': int(round(r['chinos'])),
             'share': round(r['share'], 2)
         })
-        
+
     for p in periodos:
-        sub = df_year if p == 'ALL' else df_year[df_year['mes'] == p]
+        sub = sub_df if p == 'ALL' else sub_df[sub_df['mes'] == p]
         tot = int(round(sub['unidad'].sum()))
         chi = int(round(sub['unidad_china'].sum()))
         sh = round((chi / tot * 100), 2) if tot > 0 else 0
@@ -246,7 +234,7 @@ def procesar_dataframe_anio(df_year: pd.DataFrame, year: int) -> dict:
             for _, r in top_secc.iterrows()
         ]
         
-        year_output['periodos'][p] = {
+        slice_output['periodos'][p] = {
             'total_pat': tot,
             'chinos_pat': chi,
             'share_pct': sh,
@@ -258,6 +246,80 @@ def procesar_dataframe_anio(df_year: pd.DataFrame, year: int) -> dict:
             'top_seccionales': top_secc_list
         }
         
+    return slice_output
+
+
+def obtener_url_recurso_anio(year: int) -> str:
+    """Consulta la API de datos.gob.ar para obtener el enlace de descarga del año."""
+    try:
+        req = urllib.request.Request(CKAN_PACKAGE_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            if data.get('success'):
+                for r in data['result'].get('resources', []):
+                    name = r.get('name', '')
+                    url = r.get('url', '')
+                    if str(year) in name and url.endswith('.zip'):
+                        return url
+    except Exception as e:
+        print(f"[!] Nota API CKAN: {e}. Usando URL de respaldo.")
+    
+    return CURRENT_YEAR_FALLBACK_URL
+
+
+def procesar_dataframe_anio(df_year: pd.DataFrame, year: int) -> dict:
+    """Procesa el dataframe y calcula todas las métricas agregadas por segmento."""
+    df_year = df_year.copy()
+    df_year['tramite_fecha'] = pd.to_datetime(df_year['tramite_fecha'], errors='coerce')
+    df_year['mes'] = df_year['tramite_fecha'].dt.to_period('M').astype(str)
+    
+    marca_norm = df_year['automotor_marca_descripcion'].astype(str).str.strip().str.upper()
+    df_year['marca_normalizada'] = marca_norm
+    df_year['es_chino'] = marca_norm.isin(MARCAS_OBJETIVO)
+    
+    if 'titular_porcentaje_titularidad' in df_year.columns:
+        pct = pd.to_numeric(df_year['titular_porcentaje_titularidad'], errors='coerce').fillna(100)
+        pct = np.where((pct <= 0) | (pct > 100), 100, pct)
+        df_year['unidad'] = pct / 100.0
+    else:
+        df_year['unidad'] = 1.0
+    df_year['unidad_china'] = df_year['unidad'] * df_year['es_chino']
+    
+    prov_norm = (
+        df_year['registro_seccional_provincia'].astype(str).str.strip().str.upper()
+        .str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+    )
+    df_year['provincia_mapa'] = prov_norm.map(MAPA_NOMBRES)
+    
+    df_year['modelo_completo'] = (
+        df_year['marca_normalizada'] + ' ' + 
+        df_year['automotor_modelo_descripcion'].astype(str).str.strip().str.upper()
+    )
+    df_year['powertrain'] = df_year['modelo_completo'].apply(clasificar_powertrain)
+    df_year['seg_base'] = df_year['automotor_tipo_descripcion'].apply(clasificar_segmento_base)
+    
+    meses_presentes = sorted([m for m in df_year['mes'].dropna().unique() if m.startswith(str(year))])
+    periodos = ['ALL'] + meses_presentes
+    
+    segment_slices = {
+        'TOTAL': df_year,
+        'GENTE': df_year[df_year['seg_base'].isin(['AUTOS', 'SUVS', 'PICKUPS'])],
+        'SUVS_AUTOS': df_year[df_year['seg_base'].isin(['AUTOS', 'SUVS'])],
+        'PICKUPS': df_year[df_year['seg_base'] == 'PICKUPS']
+    }
+    
+    year_output = {
+        'meses': meses_presentes,
+        'segmentos': {}
+    }
+    
+    for seg_id, seg_df in segment_slices.items():
+        year_output['segmentos'][seg_id] = process_segment_slice(seg_df, periodos)
+        
+    # Compatibilidad directa
+    year_output['periodos'] = year_output['segmentos']['TOTAL']['periodos']
+    year_output['historico_mensual'] = year_output['segmentos']['TOTAL']['historico_mensual']
+    
     return year_output
 
 
@@ -375,19 +437,25 @@ def ejecutar_pipeline_actualizacion(year: int = 2026, force: bool = False, local
     dashboard_data['last_updated'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     dashboard_data['latest_month'] = year_processed['meses'][-1] if year_processed['meses'] else f"{year}-01"
     
-    # 6. Reconstruir la serie macroevolution
-    dashboard_data['macro_evolution'] = []
-    for y in dashboard_data['available_years']:
-        y_key = str(y)
-        if y_key in dashboard_data['years'] and 'ALL' in dashboard_data['years'][y_key]['periodos']:
-            p_all = dashboard_data['years'][y_key]['periodos']['ALL']
-            dashboard_data['macro_evolution'].append({
-                'year': y,
-                'total': p_all['total_pat'],
-                'chinos': p_all['chinos_pat'],
-                'share': p_all['share_pct'],
-                'lider': p_all['marca_lider']
-            })
+    # 6. Reconstruir la serie macroevolution por cada segmento
+    dashboard_data['available_segments'] = AVAILABLE_SEGMENTS
+    dashboard_data['macro_evolution'] = {}
+    for seg in ['TOTAL', 'GENTE', 'SUVS_AUTOS', 'PICKUPS']:
+        dashboard_data['macro_evolution'][seg] = []
+        for y in dashboard_data['available_years']:
+            y_key = str(y)
+            if y_key in dashboard_data['years']:
+                y_data = dashboard_data['years'][y_key]
+                seg_slice = y_data.get('segmentos', {}).get(seg, y_data)
+                if 'ALL' in seg_slice.get('periodos', {}):
+                    p_all = seg_slice['periodos']['ALL']
+                    dashboard_data['macro_evolution'][seg].append({
+                        'year': y,
+                        'total': p_all['total_pat'],
+                        'chinos': p_all['chinos_pat'],
+                        'share': p_all['share_pct'],
+                        'lider': p_all['marca_lider']
+                    })
             
     # 7. Guardar dashboard_data.json
     with open(DASHBOARD_FILE, 'w', encoding='utf-8') as f:

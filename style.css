@@ -423,13 +423,13 @@ body {
     min-width: 45px;
 }
 
-.year-pills, .month-pills {
+.segment-pills, .year-pills, .month-pills {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
 }
 
-.year-pill, .pill {
+.segment-pill, .year-pill, .pill {
     background: var(--pill-bg);
     color: var(--pill-color);
     border: 1px solid var(--pill-border);
@@ -441,9 +441,16 @@ body {
     transition: var(--transition-smooth);
 }
 
-.year-pill:hover, .pill:hover {
+.segment-pill:hover, .year-pill:hover, .pill:hover {
     background: var(--pill-border);
     color: var(--text-light);
+}
+
+.segment-pill.active {
+    background: linear-gradient(135deg, #0284c7, #2563eb);
+    color: white;
+    border-color: #0284c7;
+    box-shadow: 0 3px 12px rgba(2, 132, 199, 0.35);
 }
 
 .year-pill.active {

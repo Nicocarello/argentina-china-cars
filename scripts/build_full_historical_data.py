@@ -1,7 +1,21 @@
+#!/usr/bin/env python3
+"""
+==============================================================================
+ARGENTINA AUTO MONITOR - BUILD HISTORICAL DATA WITH VEHICLE SEGMENTATION
+==============================================================================
+Genera la base consolidada de 2018 a 2026 con segmentación vehicular completa:
+1. 'TOTAL': Todo el mercado (autos, SUVs, pick-ups, camiones, acoplados, buses).
+2. 'GENTE': "El auto de la gente" (Autos, SUVs y Pick-ups particulares y familiares).
+3. 'SUVS_AUTOS': "Solo Autos y SUVs" (Hatchbacks, Sedanes y Crossovers familiares).
+4. 'PICKUPS': "Pick-ups y Camionetas" (Cabina doble, simple y media).
+==============================================================================
+"""
+
 import os
 import io
 import gc
 import json
+import glob
 import zipfile
 import urllib.request
 import numpy as np
@@ -69,7 +83,31 @@ YEAR_ZIP_URLS = {
     2026: "https://datos.jus.gob.ar/dataset/37c9ad39-f092-44be-9b7f-1201b3c4b7a8/resource/f854085c-73e9-447f-b725-6226b81a1caf/download/dnrpa-inscripciones-iniciales-autos-2026.zip"
 }
 
-def clasificar_powertrain(desc):
+AVAILABLE_SEGMENTS = [
+    {
+        'id': 'TOTAL',
+        'label': '🚗 Todo el Mercado',
+        'desc': 'Totalidad de inscripciones (incluye pesados y comerciales)'
+    },
+    {
+        'id': 'GENTE',
+        'label': '👥 Autos de la Gente',
+        'desc': 'Autos, SUVs y Pick-ups (excluye camiones y colectivos)'
+    },
+    {
+        'id': 'SUVS_AUTOS',
+        'label': '✨ Solo Autos y SUVs',
+        'desc': 'Vehículos familiares de pasajeros (excluye pick-ups)'
+    },
+    {
+        'id': 'PICKUPS',
+        'label': '🛻 Pick-ups y Camionetas',
+        'desc': 'Camionetas particulares y de trabajo liviano'
+    }
+]
+
+
+def clasificar_powertrain(desc: str) -> str:
     d = str(desc).upper()
     if any(k in d for k in ['DOLPHIN', 'YUAN PLUS', 'HAN EV', 'TANG EV', 'ORCA', 'E-STAR', 'SEAL']):
         return 'BEV (100% Eléctrico)'
@@ -79,64 +117,50 @@ def clasificar_powertrain(desc):
         return 'HEV (Híbrido Convencional)'
     return 'ICE (Combustión)'
 
-def process_year_df(df_year, year):
-    """Procesa el dataframe de un año y genera su estructura para el dashboard."""
-    # Columnas estándar
-    df_year['tramite_fecha'] = pd.to_datetime(df_year['tramite_fecha'], errors='coerce')
-    df_year['mes'] = df_year['tramite_fecha'].dt.to_period('M').astype(str)
-    
-    marca_norm = df_year['automotor_marca_descripcion'].astype(str).str.strip().str.upper()
-    df_year['marca_normalizada'] = marca_norm
-    df_year['es_chino'] = marca_norm.isin(MARCAS_OBJETIVO)
-    
-    # Ponderación
-    if 'titular_porcentaje_titularidad' in df_year.columns:
-        pct = pd.to_numeric(df_year['titular_porcentaje_titularidad'], errors='coerce').fillna(100)
-        pct = np.where((pct <= 0) | (pct > 100), 100, pct)
-        df_year['unidad'] = pct / 100.0
-    else:
-        df_year['unidad'] = 1.0
-    df_year['unidad_china'] = df_year['unidad'] * df_year['es_chino']
-    
-    prov_norm = (
-        df_year['registro_seccional_provincia'].astype(str).str.strip().str.upper()
-        .str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
-    )
-    df_year['provincia_mapa'] = prov_norm.map(MAPA_NOMBRES)
-    
-    df_year['modelo_completo'] = df_year['marca_normalizada'] + ' ' + df_year['automotor_modelo_descripcion'].astype(str).str.strip().str.upper()
-    df_year['powertrain'] = df_year['modelo_completo'].apply(clasificar_powertrain)
-    
-    meses_presentes = sorted([m for m in df_year['mes'].dropna().unique() if m.startswith(str(year))])
-    periodos = ['ALL'] + meses_presentes
-    
-    year_output = {
-        'meses': meses_presentes,
+
+def clasificar_segmento_base(tipo_desc: str) -> str:
+    """Clasifica el tipo de carrocería según la terminología de DNRPA."""
+    t = str(tipo_desc).strip().upper()
+    if any(k in t for k in ['RURAL', 'TODO TERRENO']):
+        return 'SUVS'
+    if any(k in t for k in ['SEDAN', 'COUPE', 'CABRIOLET', 'HATCH', 'BERLINA', 'LIMOUSINE']):
+        return 'AUTOS'
+    if any(k in t for k in ['PICK-UP', 'PICK UP']):
+        return 'PICKUPS'
+    return 'PESADOS_OTROS'
+
+
+def process_segment_slice(sub_df: pd.DataFrame, periodos: list) -> dict:
+    """Procesa un subconjunto de datos filtrado por segmento."""
+    slice_output = {
         'periodos': {},
         'historico_mensual': []
     }
     
-    # Histórico mensual del año
-    hist = df_year.groupby('mes', as_index=False).agg(
+    if len(sub_df) == 0:
+        return slice_output
+
+    # Histórico mensual del segmento
+    hist = sub_df.groupby('mes', as_index=False).agg(
         total=('unidad', 'sum'),
         chinos=('unidad_china', 'sum')
     ).sort_values('mes')
     hist['share'] = np.where(hist['total'] > 0, (hist['chinos'] / hist['total']) * 100, 0)
     for _, r in hist.iterrows():
-        year_output['historico_mensual'].append({
+        slice_output['historico_mensual'].append({
             'mes': r['mes'],
             'total': int(round(r['total'])),
             'chinos': int(round(r['chinos'])),
             'share': round(r['share'], 2)
         })
-        
+
     for p in periodos:
-        sub = df_year if p == 'ALL' else df_year[df_year['mes'] == p]
+        sub = sub_df if p == 'ALL' else sub_df[sub_df['mes'] == p]
         tot = int(round(sub['unidad'].sum()))
         chi = int(round(sub['unidad_china'].sum()))
         sh = round((chi / tot * 100), 2) if tot > 0 else 0
         
-        # Provincias
+        # Desglose provincial
         prov_sub = sub.groupby('provincia_mapa', as_index=False).agg(
             total=('unidad', 'sum'),
             chinos=('unidad_china', 'sum')
@@ -158,12 +182,26 @@ def process_year_df(df_year, year):
                 
         # Top Marcas
         marcas_sub = sub[sub['es_chino']]['marca_normalizada'].value_counts().head(8)
-        top_marcas = [{'marca': m, 'unidades': int(cnt), 'share_bloque': round(cnt / chi * 100, 1) if chi > 0 else 0} for m, cnt in marcas_sub.items()]
+        top_marcas = [
+            {
+                'marca': m,
+                'unidades': int(cnt),
+                'share_bloque': round(cnt / chi * 100, 1) if chi > 0 else 0
+            } 
+            for m, cnt in marcas_sub.items()
+        ]
         
         # Top Modelos
         modelos_sub = sub[sub['es_chino']].groupby(['modelo_completo', 'powertrain']).size().reset_index(name='unidades')
         modelos_sub = modelos_sub.sort_values('unidades', ascending=False).head(10)
-        top_modelos = [{'modelo': r['modelo_completo'], 'powertrain': r['powertrain'], 'unidades': int(r['unidades'])} for _, r in modelos_sub.iterrows()]
+        top_modelos = [
+            {
+                'modelo': r['modelo_completo'],
+                'powertrain': r['powertrain'],
+                'unidades': int(r['unidades'])
+            } 
+            for _, r in modelos_sub.iterrows()
+        ]
         
         # Top Seccionales
         secc_sub = sub.groupby(['registro_seccional_codigo', 'registro_seccional_descripcion', 'registro_seccional_provincia']).agg(
@@ -173,11 +211,16 @@ def process_year_df(df_year, year):
         secc_sub['share'] = np.where(secc_sub['total'] > 0, (secc_sub['chinos'] / secc_sub['total']) * 100, 0)
         top_secc = secc_sub.sort_values('chinos', ascending=False).head(8)
         top_secc_list = [
-            {'nombre': str(r['registro_seccional_descripcion']).title(), 'provincia': str(r['registro_seccional_provincia'])[:12], 'chinos': int(round(r['chinos'])), 'share': round(r['share'], 1)}
+            {
+                'nombre': str(r['registro_seccional_descripcion']).title(),
+                'provincia': str(r['registro_seccional_provincia'])[:12],
+                'chinos': int(round(r['chinos'])),
+                'share': round(r['share'], 1)
+            }
             for _, r in top_secc.iterrows()
         ]
         
-        year_output['periodos'][p] = {
+        slice_output['periodos'][p] = {
             'total_pat': tot,
             'chinos_pat': chi,
             'share_pct': sh,
@@ -189,7 +232,65 @@ def process_year_df(df_year, year):
             'top_seccionales': top_secc_list
         }
         
+    return slice_output
+
+
+def process_year_df(df_year: pd.DataFrame, year: int) -> dict:
+    """Procesa el dataframe de un año generando métricas para cada segmento."""
+    df_year = df_year.copy()
+    df_year['tramite_fecha'] = pd.to_datetime(df_year['tramite_fecha'], errors='coerce')
+    df_year['mes'] = df_year['tramite_fecha'].dt.to_period('M').astype(str)
+    
+    marca_norm = df_year['automotor_marca_descripcion'].astype(str).str.strip().str.upper()
+    df_year['marca_normalizada'] = marca_norm
+    df_year['es_chino'] = marca_norm.isin(MARCAS_OBJETIVO)
+    
+    # Ponderación de titularidad
+    if 'titular_porcentaje_titularidad' in df_year.columns:
+        pct = pd.to_numeric(df_year['titular_porcentaje_titularidad'], errors='coerce').fillna(100)
+        pct = np.where((pct <= 0) | (pct > 100), 100, pct)
+        df_year['unidad'] = pct / 100.0
+    else:
+        df_year['unidad'] = 1.0
+    df_year['unidad_china'] = df_year['unidad'] * df_year['es_chino']
+    
+    prov_norm = (
+        df_year['registro_seccional_provincia'].astype(str).str.strip().str.upper()
+        .str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8')
+    )
+    df_year['provincia_mapa'] = prov_norm.map(MAPA_NOMBRES)
+    
+    df_year['modelo_completo'] = (
+        df_year['marca_normalizada'] + ' ' + 
+        df_year['automotor_modelo_descripcion'].astype(str).str.strip().str.upper()
+    )
+    df_year['powertrain'] = df_year['modelo_completo'].apply(clasificar_powertrain)
+    df_year['seg_base'] = df_year['automotor_tipo_descripcion'].apply(clasificar_segmento_base)
+    
+    meses_presentes = sorted([m for m in df_year['mes'].dropna().unique() if m.startswith(str(year))])
+    periodos = ['ALL'] + meses_presentes
+    
+    segment_slices = {
+        'TOTAL': df_year,
+        'GENTE': df_year[df_year['seg_base'].isin(['AUTOS', 'SUVS', 'PICKUPS'])],
+        'SUVS_AUTOS': df_year[df_year['seg_base'].isin(['AUTOS', 'SUVS'])],
+        'PICKUPS': df_year[df_year['seg_base'] == 'PICKUPS']
+    }
+    
+    year_output = {
+        'meses': meses_presentes,
+        'segmentos': {}
+    }
+    
+    for seg_id, seg_df in segment_slices.items():
+        year_output['segmentos'][seg_id] = process_segment_slice(seg_df, periodos)
+        
+    # Compatibilidad directa
+    year_output['periodos'] = year_output['segmentos']['TOTAL']['periodos']
+    year_output['historico_mensual'] = year_output['segmentos']['TOTAL']['historico_mensual']
+    
     return year_output
+
 
 def main():
     years = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026]
@@ -197,21 +298,22 @@ def main():
     full_output = {
         'available_years': years,
         'current_year': 2026,
-        'macro_evolution': [],
+        'available_segments': AVAILABLE_SEGMENTS,
+        'macro_evolution': {},
         'years': {}
     }
     
     # 1. Cargar 2026 desde archivos locales
     print("-> Procesando Año 2026 desde archivos locales...")
-    import glob
     csv_2026 = sorted(glob.glob('data/dnrpa-inscripciones-iniciales-autos-2026*.csv'))
     df_2026 = pd.concat([pd.read_csv(f, low_memory=False) for f in csv_2026], ignore_index=True)
     full_output['years']['2026'] = process_year_df(df_2026, 2026)
     
-    tot_26 = full_output['years']['2026']['periodos']['ALL']['total_pat']
-    chi_26 = full_output['years']['2026']['periodos']['ALL']['chinos_pat']
-    sh_26 = full_output['years']['2026']['periodos']['ALL']['share_pct']
-    print(f"   2026 procesado: {tot_26:,} autos, {chi_26:,} chinos ({sh_26:.2f}% share)")
+    for seg in ['TOTAL', 'GENTE', 'SUVS_AUTOS', 'PICKUPS']:
+        tot = full_output['years']['2026']['segmentos'][seg]['periodos']['ALL']['total_pat']
+        chi = full_output['years']['2026']['segmentos'][seg]['periodos']['ALL']['chinos_pat']
+        sh = full_output['years']['2026']['segmentos'][seg]['periodos']['ALL']['share_pct']
+        print(f"   2026 [{seg}]: {tot:,} autos, {chi:,} chinos ({sh:.2f}% share)")
     del df_2026
     gc.collect()
     
@@ -220,10 +322,10 @@ def main():
         print(f"\n-> Descargando y procesando Año {y}...")
         url = YEAR_ZIP_URLS[y]
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=35) as resp:
             zip_bytes = resp.read()
-        print(f"   Descargado {y}.zip ({len(zip_bytes)/(1024*1024):.1f} MB). Extrayendo CSVs...")
-        
+            
+        print(f"   Descargado {y}.zip ({len(zip_bytes)/(1024*1024):.1f} MB). Extrayendo...")
         dfs = []
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             for name in sorted(zf.namelist()):
@@ -236,33 +338,33 @@ def main():
         gc.collect()
         
         full_output['years'][str(y)] = process_year_df(df_y, y)
-        tot = full_output['years'][str(y)]['periodos']['ALL']['total_pat']
-        chi = full_output['years'][str(y)]['periodos']['ALL']['chinos_pat']
-        sh = full_output['years'][str(y)]['periodos']['ALL']['share_pct']
+        tot = full_output['years'][str(y)]['segmentos']['TOTAL']['periodos']['ALL']['total_pat']
+        chi = full_output['years'][str(y)]['segmentos']['TOTAL']['periodos']['ALL']['chinos_pat']
+        sh = full_output['years'][str(y)]['segmentos']['TOTAL']['periodos']['ALL']['share_pct']
         print(f"   {y} procesado: {tot:,} autos, {chi:,} chinos ({sh:.2f}% share)")
         del df_y
         gc.collect()
         
-    # 3. Macro evolution (todos los años)
-    for y in years:
-        p_all = full_output['years'][str(y)]['periodos']['ALL']
-        full_output['macro_evolution'].append({
-            'year': y,
-            'total': p_all['total_pat'],
-            'chinos': p_all['chinos_pat'],
-            'share': p_all['share_pct'],
-            'lider': p_all['marca_lider']
-        })
-        
+    # 3. Macro evolution por cada segmento
+    for seg in ['TOTAL', 'GENTE', 'SUVS_AUTOS', 'PICKUPS']:
+        full_output['macro_evolution'][seg] = []
+        for y in years:
+            p_all = full_output['years'][str(y)]['segmentos'][seg]['periodos']['ALL']
+            full_output['macro_evolution'][seg].append({
+                'year': y,
+                'total': p_all['total_pat'],
+                'chinos': p_all['chinos_pat'],
+                'share': p_all['share_pct'],
+                'lider': p_all['marca_lider']
+            })
+            
     out_file = 'data/dashboard_data.json'
     with open(out_file, 'w', encoding='utf-8') as f:
         json.dump(full_output, f, ensure_ascii=False)
         
-    print(f"\n✅ ¡Base histórica completa 2018-2026 generada con éxito!")
+    print(f"\n[OK] Base historica consolidada con segmentacion generada con exito!")
     print(f"   Archivo guardado: {out_file} ({os.path.getsize(out_file)/(1024):.1f} KB)")
-    print("\nResumen Macro Histórico:")
-    for m in full_output['macro_evolution']:
-        print(f"   • {m['year']}: {m['chinos']:,} chinos / {m['total']:,} total ({m['share']:.2f}% share) - Líder: {m['lider']}")
+
 
 if __name__ == '__main__':
     main()

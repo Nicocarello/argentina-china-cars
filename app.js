@@ -1,8 +1,9 @@
 /**
  * ==============================================================================
  * ARGENTINA AUTO MONITOR - JAVASCRIPT APPLICATION LOGIC
- * Multi-Year Analysis (2018 - 2026), Scrubber Controller, Dual Plotly Map,
- * Dynamic Rankings, Macro Evolution Chart, and Dual-Theme Engine (Light/Dark).
+ * Multi-Year Analysis (2018 - 2026), Segment Filter (Autos/SUVs/Pickups),
+ * Scrubber Controller, Dual Plotly Map, Dynamic Rankings, Macro Evolution Chart,
+ * and Dual-Theme Engine (Light/Dark).
  * ==============================================================================
  */
 
@@ -11,6 +12,7 @@ let dashboardData = null;
 let geojsonData = null;
 let currentYear = 2026;
 let currentPeriod = 'ALL';
+let currentSegment = 'TOTAL'; // 'TOTAL' | 'GENTE' | 'SUVS_AUTOS' | 'PICKUPS'
 let chartViewMode = 'annual'; // 'annual' | 'macro'
 let isPlaying = false;
 let animationInterval = null;
@@ -31,6 +33,13 @@ const MONTH_ABBR_ES = {
     '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr',
     '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago',
     '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
+};
+
+const SEGMENT_LABELS = {
+    'TOTAL': 'Todo el Mercado',
+    'GENTE': 'Autos de la Gente (Autos + SUVs + Pick-ups)',
+    'SUVS_AUTOS': 'Solo Autos y SUVs Familiares',
+    'PICKUPS': 'Pick-ups y Camionetas'
 };
 
 function getPeriodLabel(period, year) {
@@ -62,7 +71,7 @@ function initTheme() {
     if (savedTheme) {
         currentTheme = savedTheme;
     } else {
-        currentTheme = 'light'; // Default lighter theme as requested
+        currentTheme = 'light';
     }
     applyTheme(currentTheme);
 }
@@ -87,7 +96,7 @@ function applyTheme(theme) {
 function toggleTheme() {
     const nextTheme = (currentTheme === 'light') ? 'dark' : 'light';
     applyTheme(nextTheme);
-    renderDashboard(); // Re-render Plotly and Chart.js with matching palette
+    renderDashboard();
 }
 
 /**
@@ -99,6 +108,15 @@ function setupStaticEventListeners() {
     if (themeBtn) {
         themeBtn.addEventListener('click', toggleTheme);
     }
+
+    // Vehicle Segment Filter Pills
+    const segPills = document.querySelectorAll('.segment-pill');
+    segPills.forEach(pill => {
+        pill.addEventListener('click', (e) => {
+            const seg = e.currentTarget.getAttribute('data-segment');
+            selectSegment(seg);
+        });
+    });
 
     // Playback animation button
     const playBtn = document.getElementById('btn-play-animation');
@@ -132,12 +150,32 @@ function setupStaticEventListeners() {
 }
 
 /**
+ * Handle vehicle segment filter change
+ */
+function selectSegment(segment) {
+    if (segment === currentSegment) return;
+    currentSegment = segment;
+
+    document.querySelectorAll('.segment-pill').forEach(pill => {
+        if (pill.getAttribute('data-segment') === segment) {
+            pill.classList.add('active');
+        } else {
+            pill.classList.remove('active');
+        }
+    });
+
+    updateTimelineLabel();
+    updateChartEvolutionHeader();
+    renderDashboard();
+}
+
+/**
  * Load pre-aggregated multi-year JSON metrics and GeoJSON cartography
  */
 async function loadInitialData() {
     try {
         const [dashResp, geoResp] = await Promise.all([
-            fetch('data/dashboard_data.json'),
+            fetch('data/dashboard_data.json?v=' + Date.now()),
             fetch('data/argentina-provincias.geojson')
         ]);
 
@@ -216,7 +254,6 @@ function initializeYearPills() {
 
     container.innerHTML = html;
 
-    // Attach click handlers
     container.querySelectorAll('.year-pill').forEach(btn => {
         btn.addEventListener('click', (e) => {
             if (isPlaying) stopAnimation();
@@ -257,7 +294,6 @@ function initializeMonthPills() {
 
     container.innerHTML = html;
 
-    // Attach click handlers
     container.querySelectorAll('.pill').forEach(btn => {
         btn.addEventListener('click', (e) => {
             if (isPlaying) stopAnimation();
@@ -275,7 +311,6 @@ function selectYear(year) {
     currentYear = year;
     currentPeriod = 'ALL';
 
-    // Update active class on year buttons
     document.querySelectorAll('.year-pill').forEach(btn => {
         const y = parseInt(btn.getAttribute('data-year'), 10);
         if (y === currentYear) {
@@ -285,14 +320,9 @@ function selectYear(year) {
         }
     });
 
-    // Re-render month buttons for this year
     initializeMonthPills();
-
-    // Update header labels & chart titles
     updateTimelineLabel();
     updateChartEvolutionHeader();
-
-    // Re-render all dashboard components
     renderDashboard();
 }
 
@@ -300,12 +330,8 @@ function selectYear(year) {
  * Select a period (ALL or specific month) within the current year
  */
 function selectPeriod(period) {
-    const yearObj = dashboardData?.years[currentYear];
-    if (!yearObj || !yearObj.periodos[period]) return;
-
     currentPeriod = period;
 
-    // Update active class on pills
     document.querySelectorAll('.month-pills .pill').forEach(pill => {
         if (pill.getAttribute('data-period') === period) {
             pill.classList.add('active');
@@ -319,12 +345,13 @@ function selectPeriod(period) {
 }
 
 /**
- * Update the period description in the controller
+ * Update the period & segment description in the controller
  */
 function updateTimelineLabel() {
     const label = document.getElementById('timeline-current-label');
     if (label) {
-        label.innerHTML = `Mostrando: <b>${getPeriodLabel(currentPeriod, currentYear)}</b>`;
+        const segName = SEGMENT_LABELS[currentSegment] || 'Todo el Mercado';
+        label.innerHTML = `Mostrando: <b>${getPeriodLabel(currentPeriod, currentYear)}</b> • <span style="color: var(--accent-cyan); font-weight: 700;">${segName}</span>`;
     }
 }
 
@@ -334,13 +361,14 @@ function updateTimelineLabel() {
 function updateChartEvolutionHeader() {
     const titleEl = document.getElementById('chart-evolution-title');
     const descEl = document.getElementById('chart-evolution-desc');
+    const segName = SEGMENT_LABELS[currentSegment] || 'Mercado';
 
     if (chartViewMode === 'annual') {
-        if (titleEl) titleEl.textContent = `Evolución Mensual (${currentYear})`;
+        if (titleEl) titleEl.textContent = `Evolución Mensual (${currentYear}) - ${segName}`;
         if (descEl) descEl.textContent = `Patentamientos y Market Share mes a mes durante ${currentYear}`;
     } else {
-        if (titleEl) titleEl.textContent = `Evolución Macro Multianual (2018 - 2026)`;
-        if (descEl) descEl.textContent = `Trayectoria histórica completa y salto de escala del bloque chino`;
+        if (titleEl) titleEl.textContent = `Evolución Macro Multianual (2018 - 2026) - ${segName}`;
+        if (descEl) descEl.textContent = `Trayectoria histórica completa y salto de escala en este segmento`;
     }
 }
 
@@ -368,7 +396,6 @@ function startAnimation() {
     if (playIcon) playIcon.textContent = '⏸';
     if (playText) playText.textContent = 'Pausar';
 
-    // Start from first month if currently on ALL
     let index = periodList.indexOf(currentPeriod);
     if (index <= 0 || index >= periodList.length - 1) {
         index = 1;
@@ -378,7 +405,7 @@ function startAnimation() {
     animationInterval = setInterval(() => {
         index++;
         if (index >= periodList.length) {
-            index = 0; // Return to ALL and stop
+            index = 0;
             selectPeriod(periodList[index]);
             stopAnimation();
             return;
@@ -397,21 +424,35 @@ function stopAnimation() {
 }
 
 /**
- * Render all dashboard sections for the active year and period
+ * Helper to obtain the active slice based on segment and year
+ */
+function getActiveSlice() {
+    if (!dashboardData) return null;
+    const yearObj = dashboardData.years[currentYear];
+    if (!yearObj) return null;
+
+    if (yearObj.segmentos && yearObj.segmentos[currentSegment]) {
+        return yearObj.segmentos[currentSegment];
+    }
+    return yearObj;
+}
+
+/**
+ * Render all dashboard sections for the active year, period, and segment
  */
 function renderDashboard() {
     if (!dashboardData || !geojsonData) return;
 
-    const yearObj = dashboardData.years[currentYear];
-    if (!yearObj) return;
+    const slice = getActiveSlice();
+    if (!slice || !slice.periodos) return;
 
-    const data = yearObj.periodos[currentPeriod];
+    const data = slice.periodos[currentPeriod] || slice.periodos['ALL'];
     if (!data) return;
 
     renderKPIs(data);
     renderPlotlyMap(data);
     renderProvincesTable(data);
-    renderEvolutionChart();
+    renderEvolutionChart(slice);
     renderBrandsChart(data);
     renderModelsList(data);
     renderSeccionalesList(data);
@@ -433,7 +474,7 @@ function renderKPIs(data) {
     const leaderSub = document.getElementById('kpi-leader-sub');
     if (leaderSub) {
         leaderSub.textContent = data.marca_lider_u
-            ? `${data.marca_lider_u.toLocaleString('es-AR')} unidades patentadas`
+            ? `${data.marca_lider_u.toLocaleString('es-AR')} unidades en el segmento`
             : 'Sin datos disponibles';
     }
 }
@@ -454,14 +495,12 @@ function renderPlotlyMap(data) {
     const isLight = (currentTheme === 'light');
     const cabaName = "Ciudad Autónoma de Buenos Aires";
 
-    // Split features
     const argFeatures = geojsonData.features.filter(f => f.properties.nombre !== cabaName);
     const cabaFeatures = geojsonData.features.filter(f => f.properties.nombre === cabaName);
 
     const geoArg = { type: "FeatureCollection", features: argFeatures };
     const geoCaba = { type: "FeatureCollection", features: cabaFeatures };
 
-    // Build data arrays for Plotly
     const provsArg = [];
     const zArg = [];
     const customArg = [];
@@ -504,13 +543,14 @@ function renderPlotlyMap(data) {
 
     const dividerColor = isLight ? '#cbd5e1' : '#64748b';
     const accentHighlight = isLight ? '#dc2626' : '#ef4444';
+    const segLabelShort = SEGMENT_LABELS[currentSegment] || 'Segmento';
 
     const hoverTemplate = 
         "<b style='font-size: 15px;'>%{customdata[0]}</b><br>" +
         `<span style='color: ${dividerColor};'>━━━━━━━━━━━━━━━━━━━━━━━━</span><br>` +
-        `🇨🇳 <b>Penetración Marcas Chinas:</b> <span style='color: ${accentHighlight}; font-weight: bold;'>%{customdata[1]}</span> (Puesto #%{customdata[4]} de 24)<br>` +
+        `🇨🇳 <b>Cuota Chinos (${segLabelShort}):</b> <span style='color: ${accentHighlight}; font-weight: bold;'>%{customdata[1]}</span> (Puesto #%{customdata[4]} de 24)<br>` +
         "🚗 <b>Patentamientos Chinos:</b> %{customdata[2]} unidades<br>" +
-        "📊 <b>Total Inscripciones 0km:</b> %{customdata[3]} unidades" +
+        "📊 <b>Total Inscripciones Segmento:</b> %{customdata[3]} unidades" +
         "<extra></extra>";
 
     const provBorderColor = isLight ? '#cbd5e1' : '#1e293b';
@@ -576,7 +616,6 @@ function renderPlotlyMap(data) {
             bgcolor: "rgba(0,0,0,0)"
         },
         shapes: [
-            // Connector line from Buenos Aires region to CABA box
             {
                 type: "line",
                 xref: "paper", yref: "paper",
@@ -584,7 +623,6 @@ function renderPlotlyMap(data) {
                 x1: 0.65, y1: 0.64,
                 line: { color: accentHighlight, width: 1.8, dash: "dot" }
             },
-            // Card bounding box for CABA Inset
             {
                 type: "rect",
                 xref: "paper", yref: "paper",
@@ -633,7 +671,6 @@ function renderProvincesTable(data) {
     const tbody = document.getElementById('provinces-table-body');
     if (!tbody || !data.provincias) return;
 
-    // Sort provinces descending by share
     const sorted = Object.entries(data.provincias)
         .map(([nombre, val]) => ({ nombre, ...val }))
         .sort((a, b) => b.share - a.share);
@@ -663,7 +700,7 @@ function renderProvincesTable(data) {
 /**
  * Render Chart 1: Either Annual Monthly Evolution OR Multi-Year Macro Disruption
  */
-function renderEvolutionChart() {
+function renderEvolutionChart(slice) {
     const evoCtx = document.getElementById('chart-evolution');
     if (!evoCtx || !dashboardData) return;
 
@@ -676,8 +713,8 @@ function renderEvolutionChart() {
     let y1Max = 15;
 
     if (chartViewMode === 'annual') {
-        const yearObj = dashboardData.years[currentYear];
-        const hist = yearObj?.historico_mensual || [];
+        const currentSlice = slice || getActiveSlice();
+        const hist = currentSlice?.historico_mensual || [];
         labels = hist.map(h => {
             const m = h.mes.split('-')[1];
             return MONTH_ABBR_ES[m] || m;
@@ -688,8 +725,18 @@ function renderEvolutionChart() {
         const maxS = Math.max(...shares, 5);
         y1Max = Math.ceil(maxS * 1.25);
     } else {
-        // Macro mode (2018 - 2026)
-        const macro = dashboardData.macro_evolution || [];
+        // Macro mode (2018 - 2026) for the active segment
+        let macro = [];
+        if (dashboardData.macro_evolution) {
+            if (Array.isArray(dashboardData.macro_evolution)) {
+                macro = dashboardData.macro_evolution;
+            } else if (dashboardData.macro_evolution[currentSegment]) {
+                macro = dashboardData.macro_evolution[currentSegment];
+            } else if (dashboardData.macro_evolution['TOTAL']) {
+                macro = dashboardData.macro_evolution['TOTAL'];
+            }
+        }
+
         labels = macro.map(m => `${m.year}`);
         volumes = macro.map(m => m.chinos);
         shares = macro.map(m => m.share);
@@ -862,7 +909,7 @@ function renderModelsList(data) {
     if (!container) return;
 
     if (!data.top_modelos || data.top_modelos.length === 0) {
-        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Sin desglose de modelos disponible para este período.</p>`;
+        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Sin modelos chinos en este segmento para el período seleccionado.</p>`;
         return;
     }
 
@@ -903,7 +950,7 @@ function renderSeccionalesList(data) {
     if (!container) return;
 
     if (!data.top_seccionales || data.top_seccionales.length === 0) {
-        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Sin desglose de seccionales disponible para este período.</p>`;
+        container.innerHTML = `<p style="color: var(--text-muted); font-size: 0.85rem; padding: 12px;">Sin registros seccionales en este segmento para el período seleccionado.</p>`;
         return;
     }
 

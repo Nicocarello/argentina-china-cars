@@ -18,7 +18,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
     <!-- Custom Stylesheet -->
-    <link rel="stylesheet" href="style.css?v=9">
+    <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
     <!-- Background glowing ambient orbs -->
@@ -168,23 +168,46 @@
                     <div class="card-header">
                         <div>
                             <h3 class="card-title">Mapa 3D de Penetración Provincial</h3>
-                            <p class="card-desc">Relieve tridimensional interactivo de las 24 jurisdicciones. Arrastrá para mover, rueda/pellizco para zoom.</p>
+                            <p class="card-desc">Relieve tridimensional interactivo de las 24 jurisdicciones. CABA destacada en zoom exterior.</p>
                         </div>
                         <div class="map-controls-group">
-                            <div class="map-legend-indicator">
-                                <span class="legend-scale">0%</span>
-                                <div class="legend-gradient"></div>
-                                <span class="legend-scale" id="map-legend-max">17.7%</span>
-                            </div>
-                            <button id="btn-reset-map" class="map-action-btn" type="button" title="Restablecer vista 3D centrada">
+                            <span class="status-badge" id="geo-status">Cartografía IGN</span>
+                            <button id="btn-tilt" class="map-action-btn" type="button" title="Alternar ángulo de inclinación 3D">
+                                <span>📐 Ángulo 3D</span>
+                            </button>
+                            <button id="btn-reset" class="map-action-btn" type="button" title="Restablecer vista 3D centrada">
                                 <span>🔄 Centrar</span>
                             </button>
                         </div>
                     </div>
                     
-                    <div id="map-3d-wrap" class="map-render-area">
-                        <canvas id="map-3d-canvas" role="img" aria-label="Mapa de Argentina en 3D con columnas extruidas por provincia"></canvas>
-                        <div id="map-3d-tip" class="map-3d-tooltip"></div>
+                    <div id="canvas-wrapper" class="map-render-area">
+                        <canvas id="mapCanvas" role="img" aria-label="Mapa de Argentina en 3D con relieve y zoom de CABA"></canvas>
+
+                        <!-- Floating HUD Card (Bottom-Left) -->
+                        <div id="hud-card">
+                            <div class="hud-tag">Jurisdicción Provincial</div>
+                            <h3 class="hud-name" id="hud-name">Buenos Aires</h3>
+                            <div class="hud-metric-row">
+                                <span class="hud-metric-label">Cuota de Mercado China</span>
+                                <span class="hud-metric-val" id="hud-val">17.7%</span>
+                            </div>
+                            <div class="hud-details-row" id="hud-details">
+                                <span id="hud-chinos">🚗 14.124 u chinas</span>
+                                <span id="hud-rank">📊 Puesto #1 de 24</span>
+                            </div>
+                            <div class="hud-bar-bg">
+                                <div class="hud-bar-fill" id="hud-bar"></div>
+                            </div>
+                        </div>
+
+                        <!-- Floating Legend Pill (Bottom-Right) -->
+                        <div class="legend-box">
+                            <span>0%</span>
+                            <div class="gradient-pill"></div>
+                            <span id="map-legend-max">17.7%</span>
+                        </div>
+
                         <div class="loading-spinner" id="map-spinner">
                             <div class="spinner"></div>
                             <p>Cargando relieve cartográfico 3D oficial IGN...</p>
@@ -192,7 +215,7 @@
                     </div>
                     
                     <div class="map-footer-tip">
-                        <span>💡 <b>Interacción 3D:</b> La altura y color de cada provincia indican su cuota de mercado. Arrastrá para mover el mapa, scroll o pellizco para zoom. Pasa el cursor para ver detalles.</span>
+                        <span>💡 <b>Interacción 3D:</b> CABA se detalla ampliada en la tarjeta flotante superior derecha. Cada provincia se eleva físicamente en 3D según su penetración.</span>
                     </div>
                 </div>
             </div>
@@ -351,6 +374,6 @@
     </div>
 
     <!-- Application Logic Script -->
-    <script src="app.js?v=9"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>

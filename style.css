@@ -609,6 +609,22 @@ body {
 
 .map-card {
     min-height: 660px;
+    position: relative;
+    background: var(--bg-card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    box-shadow: 0 20px 45px -12px rgba(15, 23, 42, 0.10), 0 0 30px -5px rgba(220, 38, 38, 0.08);
+    transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+[data-theme="dark"] .map-card {
+    background: linear-gradient(160deg, rgba(30, 41, 59, 0.70) 0%, rgba(15, 23, 42, 0.90) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 
+                0 0 35px -5px rgba(239, 68, 68, 0.18), 
+                inset 0 1px 1px rgba(255, 255, 255, 0.14);
 }
 
 .map-render-area {
@@ -618,6 +634,11 @@ body {
     position: relative;
     border-radius: var(--radius-sm);
     overflow: hidden;
+    background: radial-gradient(circle at 40% 45%, rgba(220, 38, 38, 0.05) 0%, rgba(255, 255, 255, 0.02) 40%, transparent 70%);
+}
+
+[data-theme="dark"] .map-render-area {
+    background: radial-gradient(circle at 38% 42%, rgba(255, 255, 255, 0.04) 0%, rgba(239, 68, 68, 0.09) 35%, transparent 72%);
 }
 
 .loading-spinner {
@@ -682,15 +703,6 @@ body {
     clip-path: none !important;
 }
 
-/* Ambient depth glow on the map stage floor */
-.map-render-area {
-    background: radial-gradient(circle at 40% 48%, rgba(220, 38, 38, 0.04) 0%, transparent 68%);
-}
-
-[data-theme="dark"] .map-render-area {
-    background: radial-gradient(circle at 40% 48%, rgba(239, 68, 68, 0.08) 0%, transparent 72%);
-}
-
 /* 3D Physical Relief & Floating Shadow on the Continental Argentine Landmass */
 .map-render-area .geolayer .geo .choroplethlayer {
     filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.07)) 
@@ -716,39 +728,43 @@ body {
 
 /* Smooth transition on every province path */
 .map-render-area path.choroplethlocation {
-    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
-                filter 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
-                stroke 0.2s ease, 
-                stroke-width 0.2s ease;
+    transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), 
+                filter 0.22s cubic-bezier(0.4, 0, 0.2, 1), 
+                stroke 0.18s ease, 
+                stroke-width 0.18s ease;
     cursor: pointer;
+    vector-effect: non-scaling-stroke;
 }
 
-/* When mouse enters the map, slightly soften/recede unhovered provinces */
-.map-render-area .trace.choropleth:hover path.choroplethlocation {
-    opacity: 0.65;
-    filter: saturate(0.85) brightness(0.96);
+/* Dimmed state applied to non-hovered provinces during inspection */
+.map-render-area path.choroplethlocation.state-dimmed,
+.map-render-area .trace.choropleth:hover path.choroplethlocation:not(:hover):not(.state-active-hover) {
+    opacity: 0.45 !important;
+    filter: saturate(0.70) brightness(0.92) contrast(0.95) !important;
 }
 
 /* The hovered state STANDS OUT in 3D: pop, luminous white border, elevation shadow */
+.map-render-area path.choroplethlocation.state-active-hover,
 .map-render-area .trace.choropleth path.choroplethlocation:hover {
     opacity: 1 !important;
     stroke: #ffffff !important;
-    stroke-width: 2.8px !important;
+    stroke-width: 3.2px !important;
     stroke-linejoin: round !important;
     stroke-linecap: round !important;
-    filter: brightness(1.24) 
-            saturate(1.2) 
-            drop-shadow(0 8px 16px rgba(0, 0, 0, 0.45)) 
-            drop-shadow(0 2px 4px rgba(220, 38, 38, 0.35)) !important;
+    filter: brightness(1.28) 
+            saturate(1.25) 
+            drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45)) 
+            drop-shadow(0 2px 6px rgba(220, 38, 38, 0.4)) !important;
 }
 
+[data-theme="dark"] .map-render-area path.choroplethlocation.state-active-hover,
 [data-theme="dark"] .map-render-area .trace.choropleth path.choroplethlocation:hover {
     stroke: #ffffff !important;
-    stroke-width: 3.2px !important;
+    stroke-width: 3.5px !important;
     filter: brightness(1.38) 
-            saturate(1.3) 
-            drop-shadow(0 0 14px rgba(255, 255, 255, 0.7)) 
-            drop-shadow(0 10px 24px rgba(0, 0, 0, 0.9)) !important;
+            saturate(1.35) 
+            drop-shadow(0 0 16px rgba(255, 255, 255, 0.85)) 
+            drop-shadow(0 12px 28px rgba(0, 0, 0, 0.95)) !important;
 }
 
 /* ==========================================================================

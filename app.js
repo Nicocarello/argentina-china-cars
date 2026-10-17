@@ -685,10 +685,60 @@ function renderPlotlyMap(data) {
 
     const plotPromise = Plotly.react(container, traces, layout, config);
 
-    // Bring active province to front on hover so 3D shadow and luminous border pop above all neighbors
-    const setup3DPathElevation = () => {
+    // Setup Event Listeners for 3D Elevation, Dimming, and DOM Reordering
+    const setup3DMapInteractions = () => {
+        // Clear any previous listeners on container to prevent duplicates
+        if (typeof container.removeAllListeners === 'function') {
+            container.removeAllListeners('plotly_hover');
+            container.removeAllListeners('plotly_unhover');
+        }
+
+        // Plotly Hover Handler: Elevate active province & dim surrounding states
+        container.on('plotly_hover', (eventData) => {
+            if (!eventData || !eventData.points || !eventData.points.length) return;
+            const pt = eventData.points[0];
+            const allPaths = container.querySelectorAll('path.choroplethlocation');
+
+            // Apply dimmed effect to all states
+            allPaths.forEach(p => {
+                p.classList.add('state-dimmed');
+                p.classList.remove('state-active-hover');
+            });
+
+            // Find target hovered SVG path
+            let targetPath = null;
+            if (eventData.event && eventData.event.target && eventData.event.target.tagName && eventData.event.target.tagName.toLowerCase() === 'path') {
+                targetPath = eventData.event.target;
+            } else {
+                const tracePaths = container.querySelectorAll(`.trace:nth-child(${pt.curveNumber + 1}) path.choroplethlocation`);
+                if (tracePaths && tracePaths[pt.pointNumber]) {
+                    targetPath = tracePaths[pt.pointNumber];
+                }
+            }
+
+            if (targetPath) {
+                targetPath.classList.remove('state-dimmed');
+                targetPath.classList.add('state-active-hover');
+
+                // SVG Z-Index Elevation: Bring path to the top of its parent <g>
+                const parent = targetPath.parentNode;
+                if (parent && parent.lastChild !== targetPath) {
+                    parent.appendChild(targetPath);
+                }
+            }
+        });
+
+        // Plotly Unhover Handler: Restore all states to resting opacity
+        container.on('plotly_unhover', () => {
+            const allPaths = container.querySelectorAll('path.choroplethlocation');
+            allPaths.forEach(p => {
+                p.classList.remove('state-dimmed', 'state-active-hover');
+            });
+        });
+
+        // Hardware-accelerated pointer fallback for instant 60 FPS feedback
         container.querySelectorAll('path.choroplethlocation').forEach(path => {
-            path.onmouseenter = function() {
+            path.onpointerenter = function() {
                 const parent = this.parentNode;
                 if (parent && parent.lastChild !== this) {
                     parent.appendChild(this);
@@ -698,9 +748,9 @@ function renderPlotlyMap(data) {
     };
 
     if (plotPromise && typeof plotPromise.then === 'function') {
-        plotPromise.then(setup3DPathElevation);
+        plotPromise.then(setup3DMapInteractions);
     } else {
-        setTimeout(setup3DPathElevation, 60);
+        setTimeout(setup3DMapInteractions, 60);
     }
 }
 

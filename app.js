@@ -223,7 +223,7 @@ async function loadInitialData() {
 
     } catch (err) {
         console.error("Fallo de inicialización de datos:", err);
-        const container = document.getElementById('plotly-map-container');
+        const container = document.getElementById('map-3d-wrap') || document.getElementById('plotly-map-container');
         if (container) {
             container.innerHTML = `
                 <div style="padding: 40px; text-align: center; color: #ef4444;">
@@ -450,7 +450,7 @@ function renderDashboard() {
     if (!data) return;
 
     renderKPIs(data);
-    renderPlotlyMap(data);
+    render3DMap(data);
     renderProvincesTable(data);
     renderEvolutionChart(slice);
     renderBrandsChart(data);
@@ -485,304 +485,495 @@ function animateCounter(id, target) {
     el.textContent = (target || 0).toLocaleString('es-AR');
 }
 
-/**
- * Render the dual-panel Plotly Choropleth Map (23 Provincias + CABA Zoom)
- */
-function renderPlotlyMap(data) {
-    const container = document.getElementById('plotly-map-container');
-    if (!container || !geojsonData || !data.provincias) return;
+// ==============================================================================
+// 3D ARGENTINA CHOROPLETH ENGINE (HTML5 CANVAS 2.5D ISOMETRIC EXTRUSION)
+// ==============================================================================
+const KX = Math.cos(38 * Math.PI / 180); // Latitudinal projection factor (~0.788)
+const TY = 0.55; // Dimetric/Isometric latitude compression tilt
+const HMAX = 2.4; // Max extrusion height in 3D projection units
 
-    const isLight = (currentTheme === 'light');
-    const cabaName = "Ciudad Autónoma de Buenos Aires";
+const HEATMAP_STOPS = [
+    [255, 255, 178], // 0.0: Pale gold (#ffffb2)
+    [254, 217, 118], // 0.2: Gold (#fed976)
+    [254, 178, 76],  // 0.4: Amber (#feb24c)
+    [253, 141, 60],  // 0.6: Tangerine (#fd8d3c)
+    [240, 59, 32],   // 0.8: Vermilion (#f03b20)
+    [189, 0, 38]     // 1.0: Deep crimson (#bd0026)
+];
 
-    const argFeatures = geojsonData.features.filter(f => f.properties.nombre !== cabaName);
-    const cabaFeatures = geojsonData.features.filter(f => f.properties.nombre === cabaName);
-
-    const geoArg = { type: "FeatureCollection", features: argFeatures };
-    const geoCaba = { type: "FeatureCollection", features: cabaFeatures };
-
-    const provsArg = [];
-    const zArg = [];
-    const customArg = [];
-
-    const provsCaba = [];
-    const zCaba = [];
-    const customCaba = [];
-
-    let maxShare = 0;
-
-    argFeatures.forEach(feat => {
-        const prov = feat.properties.nombre;
-        const item = data.provincias[prov] || { share: 0, chinos: 0, total: 0, ranking: 24 };
-        if (item.share > maxShare) maxShare = item.share;
-
-        const row = [
-            prov,
-            `${item.share.toFixed(2)}%`,
-            item.chinos.toLocaleString('es-AR'),
-            item.total.toLocaleString('es-AR'),
-            item.ranking
-        ];
-
-        provsArg.push(prov);
-        zArg.push(item.share);
-        customArg.push(row);
-    });
-
-    cabaFeatures.forEach(feat => {
-        const prov = feat.properties.nombre;
-        const item = data.provincias[prov] || { share: 0, chinos: 0, total: 0, ranking: 24 };
-        if (item.share > maxShare) maxShare = item.share;
-
-        const row = [
-            prov,
-            `${item.share.toFixed(2)}%`,
-            item.chinos.toLocaleString('es-AR'),
-            item.total.toLocaleString('es-AR'),
-            item.ranking
-        ];
-
-        provsCaba.push(prov);
-        zCaba.push(item.share);
-        customCaba.push(row);
-    });
-
-    maxShare = Math.max(maxShare, 2.0);
-
-    const legendMaxEl = document.getElementById('map-legend-max');
-    if (legendMaxEl) {
-        legendMaxEl.textContent = `${maxShare.toFixed(1)}%`;
-    }
-
-    const dividerColor = isLight ? '#cbd5e1' : '#64748b';
-    const accentHighlight = isLight ? '#dc2626' : '#ef4444';
-    const segLabelShort = SEGMENT_LABELS[currentSegment] || 'Segmento';
-
-    const hoverTemplate = 
-        "<b style='font-size: 15px;'>%{customdata[0]}</b><br>" +
-        `<span style='color: ${dividerColor};'>━━━━━━━━━━━━━━━━━━━━━━━━</span><br>` +
-        `🇨🇳 <b>Cuota Chinos (${segLabelShort}):</b> <span style='color: ${accentHighlight}; font-weight: bold;'>%{customdata[1]}</span> (Puesto #%{customdata[4]} de 24)<br>` +
-        "🚗 <b>Patentamientos Chinos:</b> %{customdata[2]} unidades<br>" +
-        "📊 <b>Total Inscripciones Segmento:</b> %{customdata[3]} unidades" +
-        "<extra></extra>";
-
-    const provBorderColor = isLight ? '#cbd5e1' : '#1e293b';
-
-    const traces = [
-        // Trace 1: 23 Provinces
-        {
-            type: "choropleth",
-            geojson: geoArg,
-            locations: provsArg,
-            z: zArg,
-            featureidkey: "properties.nombre",
-            coloraxis: "coloraxis",
-            name: "Provincias",
-            customdata: customArg,
-            hovertemplate: hoverTemplate,
-            marker: {
-                line: { color: provBorderColor, width: 1.0 }
-            },
-            geo: "geo"
-        },
-        // Trace 2: CABA Inset Zoom
-        {
-            type: "choropleth",
-            geojson: geoCaba,
-            locations: provsCaba,
-            z: zCaba,
-            featureidkey: "properties.nombre",
-            coloraxis: "coloraxis",
-            name: "CABA",
-            customdata: customCaba,
-            hovertemplate: hoverTemplate,
-            marker: {
-                line: { color: accentHighlight, width: 2.2 }
-            },
-            geo: "geo2"
-        }
+function getHeatmapRgb(t) {
+    t = Math.max(0, Math.min(1, t));
+    const n = HEATMAP_STOPS.length - 1;
+    const pos = t * n;
+    const idx = Math.min(Math.floor(pos), n - 1);
+    const frac = pos - idx;
+    const c1 = HEATMAP_STOPS[idx];
+    const c2 = HEATMAP_STOPS[idx + 1];
+    return [
+        Math.round(c1[0] + (c2[0] - c1[0]) * frac),
+        Math.round(c1[1] + (c2[1] - c1[1]) * frac),
+        Math.round(c1[2] + (c2[2] - c1[2]) * frac)
     ];
+}
 
-    const cabaBoxFill = isLight ? 'rgba(255, 255, 255, 0.88)' : 'rgba(15, 23, 42, 0.85)';
-    const cabaBoxBorder = isLight ? 'rgba(203, 213, 225, 0.9)' : 'rgba(255, 255, 255, 0.15)';
-    const cabaTitleColor = isLight ? '#0f172a' : '#f8fafc';
-    const cabaSubColor = isLight ? '#64748b' : '#94a3b8';
+function rgbStr(c, factor = 1, alpha = 1) {
+    const r = Math.max(0, Math.min(255, Math.round(c[0] * factor)));
+    const g = Math.max(0, Math.min(255, Math.round(c[1] * factor)));
+    const b = Math.max(0, Math.min(255, Math.round(c[2] * factor)));
+    return alpha < 1 ? `rgba(${r},${g},${b},${alpha})` : `rgb(${r},${g},${b})`;
+}
 
-    const cabaItem = data.provincias[cabaName];
-    const cabaShareVal = cabaItem ? `${cabaItem.share.toFixed(1)}%` : '--';
-    const cabaRankVal = cabaItem ? `#${cabaItem.ranking}` : '';
+let map3DProvinces = null;
+let map3DOrder = [];
+let map3DView = { x: 0, y: 0, z: 1 };
+let map3DHovIndex = -1;
+let map3DSelIndex = -1;
+let map3DHits = [];
+let map3DAnimProgress = 1.0;
+let map3DAnimRaf = null;
+let map3DListenersAttached = false;
+let map3DMaxShare = 2.0;
+let map3DFit = 30;
 
-    const layout = {
-        paper_bgcolor: "rgba(0,0,0,0)",
-        plot_bgcolor: "rgba(0,0,0,0)",
-        margin: { t: 15, b: 15, l: 5, r: 5 },
-        height: 540,
-        dragmode: false,
-        geo: {
-            domain: { x: [0.0, 0.77], y: [0, 1.0] },
-            fitbounds: "locations",
-            visible: false,
-            projection: { type: "mercator" },
-            bgcolor: "rgba(0,0,0,0)"
-        },
-        geo2: {
-            domain: { x: [0.73, 0.98], y: [0.55, 0.86] },
-            fitbounds: "locations",
-            visible: false,
-            projection: { type: "mercator" },
-            bgcolor: "rgba(0,0,0,0)"
-        },
-        shapes: [
-            // Connector line from CABA on main map to inset card
-            {
-                type: "line",
-                xref: "paper", yref: "paper",
-                x0: 0.525, y0: 0.585,
-                x1: 0.72, y1: 0.68,
-                line: { color: accentHighlight, width: 1.4, dash: "dot" }
-            },
-            // Beacon pin on CABA on main map
-            {
-                type: "circle",
-                xref: "paper", yref: "paper",
-                x0: 0.518, y0: 0.577,
-                x1: 0.532, y1: 0.593,
-                fillcolor: accentHighlight,
-                line: { color: "#ffffff", width: 1.2 }
-            },
-            // Sleek floating glass card background for CABA Inset
-            {
-                type: "rect",
-                xref: "paper", yref: "paper",
-                x0: 0.72, y0: 0.48,
-                x1: 0.99, y1: 0.94,
-                line: { color: cabaBoxBorder, width: 1.2 },
-                fillcolor: cabaBoxFill
-            }
-        ],
-        annotations: [
-            {
-                text: `<b>CABA</b> • <span style='color:${accentHighlight}; font-weight:800;'>${cabaShareVal}</span><br><span style='font-size:10px; color:${cabaSubColor};'>Zoom Urbano • Puesto ${cabaRankVal}</span>`,
-                xref: "paper", yref: "paper",
-                x: 0.855, y: 0.915,
-                showarrow: false,
-                font: { size: 12, color: cabaTitleColor, family: "Plus Jakarta Sans" }
-            },
-            {
-                text: `<span style='font-size:9.5px; color:${cabaSubColor};'>Pasa el cursor para ver detalle</span>`,
-                xref: "paper", yref: "paper",
-                x: 0.855, y: 0.505,
-                showarrow: false,
-                font: { size: 10, color: cabaSubColor, family: "Plus Jakarta Sans" }
-            }
-        ],
-        coloraxis: {
-            colorscale: [
-                [0.0, "#ffffb2"],
-                [0.2, "#fed976"],
-                [0.4, "#feb24c"],
-                [0.6, "#fd8d3c"],
-                [0.8, "#f03b20"],
-                [1.0, "#bd0026"]
-            ],
-            cmin: 0,
-            cmax: maxShare,
-            showscale: false
-        }
-    };
-
-    const config = {
-        responsive: true,
-        displayModeBar: false
-    };
-
-    const plotPromise = Plotly.react(container, traces, layout, config);
-
-    // Setup Event Listeners for 3D Elevation, Dimming, and Province Matching
-    const setup3DMapInteractions = () => {
-        // Clear any previous listeners on container to prevent duplicates
-        if (typeof container.removeAllListeners === 'function') {
-            container.removeAllListeners('plotly_hover');
-            container.removeAllListeners('plotly_unhover');
+/**
+ * Process official GeoJSON polygon features into 2.5D coordinates once
+ */
+function build3DMapGeometry() {
+    if (map3DProvinces || !geojsonData) return;
+    map3DProvinces = geojsonData.features.map(feat => {
+        const name = feat.properties.nombre;
+        const isCaba = name.includes("Ciudad");
+        let rawPolys = [];
+        if (feat.geometry.type === 'Polygon') {
+            rawPolys = [feat.geometry.coordinates[0]];
+        } else {
+            const sorted = [...feat.geometry.coordinates].sort((a, b) => b[0].length - a[0].length);
+            rawPolys = sorted.filter(p => p[0].length >= 25).map(p => p[0]);
+            if (!rawPolys.length && sorted.length) rawPolys = [sorted[0][0]];
         }
 
-        // Tag every SVG path with its true province name based on feature order
-        const geo1Paths = container.querySelectorAll('.geolayer .geo:not(.geo2) path.choroplethlocation');
-        geo1Paths.forEach((path, idx) => {
-            if (argFeatures[idx]) {
-                path.setAttribute('data-province', argFeatures[idx].properties.nombre);
+        const rings = rawPolys.map(poly => {
+            let pts = poly.map(([lon, lat]) => [ (lon + 64.0) * KX, -(lat + 38.4) * TY ]);
+            if (isCaba) {
+                // Scale CABA slightly around its centroid so its 3D column stands out prominently
+                const cx = pts.reduce((a, b) => a + b[0], 0) / pts.length;
+                const cy = pts.reduce((a, b) => a + b[1], 0) / pts.length;
+                pts = pts.map(([x, y]) => [ cx + (x - cx) * 2.3, cy + (y - cy) * 2.3 ]);
             }
+            return pts;
         });
 
-        const geo2Paths = container.querySelectorAll('.geolayer .geo2 path.choroplethlocation');
-        geo2Paths.forEach((path, idx) => {
-            if (cabaFeatures[idx]) {
-                path.setAttribute('data-province', cabaFeatures[idx].properties.nombre);
-            }
-        });
+        const allPts = rings.flat();
+        const centroid = [
+            allPts.reduce((a, b) => a + b[0], 0) / allPts.length,
+            allPts.reduce((a, b) => a + b[1], 0) / allPts.length
+        ];
 
-        const allPaths = container.querySelectorAll('path.choroplethlocation');
+        // Mean latitude for North-to-South painter's order (CABA -99 drawn on top)
+        const meanLat = isCaba ? -99 : rawPolys.flat().reduce((a, b) => a + b[1], 0) / rawPolys.flat().length;
 
-        const highlightProvince = (provName, directPath) => {
-            let target = directPath;
-            if (!target && provName) {
-                target = container.querySelector(`path.choroplethlocation[data-province="${CSS.escape(provName)}"]`);
-            }
-            if (!target) return;
-
-            allPaths.forEach(p => {
-                if (p === target) {
-                    p.classList.remove('state-dimmed');
-                    p.classList.add('state-active-hover');
-                } else {
-                    p.classList.add('state-dimmed');
-                    p.classList.remove('state-active-hover');
-                }
-            });
-
-            // SVG Z-Index Elevation: Bring path to the top of its parent <g> so borders/shadows don't clip
-            const parent = target.parentNode;
-            if (parent && parent.lastChild !== target) {
-                parent.appendChild(target);
-            }
+        return {
+            name,
+            isCaba,
+            rings,
+            centroid,
+            meanLat,
+            share: 0,
+            chinos: 0,
+            total: 0,
+            ranking: 24,
+            currentH: 0,
+            targetH: 0
         };
+    });
 
-        const resetAllProvinces = () => {
-            allPaths.forEach(p => {
-                p.classList.remove('state-dimmed', 'state-active-hover');
-            });
-        };
-
-        // Plotly Hover Handler: matches accurately by point's location string
-        container.on('plotly_hover', (eventData) => {
-            if (!eventData || !eventData.points || !eventData.points.length) return;
-            const pt = eventData.points[0];
-            highlightProvince(pt.location, null);
-        });
-
-        // Plotly Unhover Handler
-        container.on('plotly_unhover', resetAllProvinces);
-
-        // Native pointer listeners on each path (zero-latency physical hit-testing)
-        allPaths.forEach(path => {
-            path.onpointerenter = function() {
-                const name = this.getAttribute('data-province');
-                highlightProvince(name, this);
-            };
-        });
-
-        container.onpointerleave = resetAllProvinces;
-    };
-
-    if (plotPromise && typeof plotPromise.then === 'function') {
-        plotPromise.then(setup3DMapInteractions);
-    } else {
-        setTimeout(setup3DMapInteractions, 60);
-    }
+    // North-to-South painter's algorithm order
+    map3DOrder = map3DProvinces.map((_, i) => i).sort((a, b) => map3DProvinces[b].meanLat - map3DProvinces[a].meanLat);
 }
 
 /**
- * Render the sorted provinces ranking table
+ * Main render function for 3D Map
+ */
+function render3DMap(data) {
+    const wrap = document.getElementById('map-3d-wrap');
+    const canvas = document.getElementById('map-3d-canvas');
+    if (!wrap || !canvas || !geojsonData || !data.provincias) return;
+
+    build3DMapGeometry();
+
+    const spinner = document.getElementById('map-spinner');
+    if (spinner) spinner.style.display = 'none';
+
+    let maxShare = 0;
+    Object.values(data.provincias).forEach(item => {
+        if (item.share > maxShare) maxShare = item.share;
+    });
+    map3DMaxShare = Math.max(maxShare, 2.0);
+
+    const legendMaxEl = document.getElementById('map-legend-max');
+    if (legendMaxEl) {
+        legendMaxEl.textContent = `${map3DMaxShare.toFixed(1)}%`;
+    }
+
+    // Update province metrics and target 3D prism heights
+    map3DProvinces.forEach(p => {
+        const item = data.provincias[p.name] || { share: 0, chinos: 0, total: 0, ranking: 24 };
+        p.share = item.share;
+        p.chinos = item.chinos;
+        p.total = item.total;
+        p.ranking = item.ranking;
+        p.targetH = (p.share / map3DMaxShare) * HMAX;
+    });
+
+    setup3DCanvasEvents(wrap, canvas);
+
+    // Smoothly animate height changes
+    start3DMapAnimation();
+}
+
+function start3DMapAnimation() {
+    if (map3DAnimRaf) cancelAnimationFrame(map3DAnimRaf);
+    map3DAnimProgress = 0;
+    const t0 = performance.now();
+    const duration = 900;
+
+    function animate(t) {
+        const elapsed = t - t0;
+        map3DAnimProgress = Math.min(1.0, elapsed / duration);
+        draw3DMap();
+        if (map3DAnimProgress < 1.0) {
+            map3DAnimRaf = requestAnimationFrame(animate);
+        } else {
+            map3DAnimRaf = null;
+        }
+    }
+    map3DAnimRaf = requestAnimationFrame(animate);
+}
+
+function draw3DMap() {
+    const canvas = document.getElementById('map-3d-canvas');
+    const wrap = document.getElementById('map-3d-wrap');
+    if (!canvas || !wrap || !map3DProvinces) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = canvas.width;
+    const h = canvas.height;
+    if (w === 0 || h === 0) return;
+
+    const isDark = (currentTheme === 'dark');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const k = map3DFit * map3DView.z;
+    const cx = w / 2 + map3DView.x;
+    const cy = h / 2 + map3DView.y;
+    const e = 1 - Math.pow(1 - map3DAnimProgress, 3); // Cubic ease-out
+
+    // 3D Isometric projection coordinate converter
+    const sc = (q, elev) => [
+        cx + (q[0] - 0.35) * k,
+        cy + (q[1] - elev + 0.6) * k
+    ];
+
+    // Directional light vector (top-left)
+    const lx = -0.65;
+    const ly = -0.75;
+
+    map3DHits = [];
+
+    // 1. Draw Ground Depth Shadow
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 3.0 * k, 7.8 * k, 9.4 * k, 0, 0, Math.PI * 2);
+    ctx.fillStyle = isDark ? 'rgba(0, 0, 0, 0.40)' : 'rgba(15, 23, 42, 0.08)';
+    ctx.filter = `blur(${Math.round(20 * dpr)}px)`;
+    ctx.fill();
+    ctx.restore();
+
+    // 2. Render each province column in North-to-South painter's order
+    map3DOrder.forEach(idx => {
+        const p = map3DProvinces[idx];
+        const elev = (p.targetH * e);
+        const isHovered = (idx === map3DHovIndex || idx === map3DSelIndex);
+        const hasAnyHover = (map3DHovIndex >= 0);
+        const dim = (hasAnyHover && !isHovered) ? 0.55 : 1.0;
+        const pop = isHovered ? 1.30 : 1.0;
+
+        const ratio = (map3DMaxShare > 0) ? (p.share / map3DMaxShare) : 0;
+        const baseColor = getHeatmapRgb(ratio);
+
+        // Lateral 3D Prism Walls
+        p.rings.forEach(ring => {
+            const B = ring.map(q => sc(q, 0));
+            const T = ring.map(q => sc(q, elev));
+
+            for (let j = 0; j < B.length; j++) {
+                const m = (j + 1) % B.length;
+                const b1 = B[j], b2 = B[m], t2 = T[m], t1 = T[j];
+
+                const dx = b2[0] - b1[0];
+                const dy = b2[1] - b1[1];
+                const len = Math.hypot(dx, dy);
+                let shade = 0.52;
+                if (len > 0.001) {
+                    const nx = dy / len;
+                    const ny = -dx / len;
+                    const dot = nx * lx + ny * ly;
+                    shade = 0.42 + 0.38 * Math.max(0, dot);
+                }
+
+                ctx.fillStyle = rgbStr(baseColor, shade * pop * dim);
+                ctx.strokeStyle = rgbStr(baseColor, (shade - 0.1) * pop * dim);
+                ctx.lineWidth = 0.75 * dpr;
+
+                ctx.beginPath();
+                ctx.moveTo(b1[0], b1[1]);
+                ctx.lineTo(b2[0], b2[1]);
+                ctx.lineTo(t2[0], t2[1]);
+                ctx.lineTo(t1[0], t1[1]);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        });
+
+        // Top Face
+        const topPath = new Path2D();
+        p.rings.forEach(ring => {
+            const T = ring.map(q => sc(q, elev));
+            T.forEach((pt, j) => {
+                if (j === 0) topPath.moveTo(pt[0], pt[1]);
+                else topPath.lineTo(pt[0], pt[1]);
+            });
+            topPath.closePath();
+        });
+
+        map3DHits[idx] = topPath;
+
+        ctx.fillStyle = rgbStr(baseColor, (isHovered ? 1.32 : 1.0) * dim);
+        ctx.fill(topPath);
+
+        // Highlight Border & Edge Stroke
+        if (isHovered) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.8 * dpr;
+            ctx.shadowColor = isDark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(220, 38, 38, 0.45)';
+            ctx.shadowBlur = 12 * dpr;
+            ctx.stroke(topPath);
+            ctx.shadowBlur = 0;
+        } else {
+            ctx.strokeStyle = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(15, 23, 42, 0.45)';
+            ctx.lineWidth = 0.8 * dpr;
+            ctx.stroke(topPath);
+        }
+
+        // CABA Beacon Tower Pin
+        if (p.isCaba) {
+            const cabaTop = sc(p.centroid, elev);
+            ctx.beginPath();
+            ctx.arc(cabaTop[0], cabaTop[1], 4.5 * dpr, 0, Math.PI * 2);
+            ctx.fillStyle = '#dc2626';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5 * dpr;
+            ctx.stroke();
+
+            // Beacon label
+            ctx.font = `bold ${Math.round(10 * dpr)}px "Plus Jakarta Sans", system-ui, sans-serif`;
+            ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
+            ctx.textAlign = 'left';
+            ctx.fillText('📍 CABA', cabaTop[0] + 7 * dpr, cabaTop[1] - 4 * dpr);
+        }
+    });
+}
+
+function hit3DMap(clientX, clientY) {
+    const canvas = document.getElementById('map-3d-canvas');
+    if (!canvas || !map3DHits || !map3DOrder.length) return -1;
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const px = (clientX - r.left) * dpr;
+    const py = (clientY - r.top) * dpr;
+    const ctx = canvas.getContext('2d');
+    for (let j = map3DOrder.length; j--;) {
+        const idx = map3DOrder[j];
+        if (map3DHits[idx] && ctx.isPointInPath(map3DHits[idx], px, py)) {
+            return idx;
+        }
+    }
+    return -1;
+}
+
+function setup3DCanvasEvents(wrap, canvas) {
+    if (map3DListenersAttached) return;
+    map3DListenersAttached = true;
+
+    const tip = document.getElementById('map-3d-tip');
+    const ptr = new Map();
+    let pd = 0;
+    let moved = 0;
+
+    const two = () => {
+        const [a, b] = [...ptr.values()];
+        return {
+            d: Math.hypot(a[0] - b[0], a[1] - b[1]),
+            x: (a[0] + b[0]) / 2,
+            y: (a[1] + b[1]) / 2
+        };
+    };
+
+    function zoom(factor, cx0, cy0) {
+        const r = canvas.getBoundingClientRect();
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const px = (cx0 - r.left) * dpr - canvas.width / 2;
+        const py = (cy0 - r.top) * dpr - canvas.height / 2;
+        const z = Math.min(5.0, Math.max(0.85, map3DView.z * factor));
+        const q = z / map3DView.z;
+        map3DView.x = px - (px - map3DView.x) * q;
+        map3DView.y = py - (py - map3DView.y) * q;
+        map3DView.z = z;
+        if (z <= 1.0) {
+            map3DView.x = 0;
+            map3DView.y = 0;
+        }
+    }
+
+    function showTooltip(idx, e) {
+        if (!tip || idx < 0) {
+            if (tip) tip.style.display = 'none';
+            return;
+        }
+        const p = map3DProvinces[idx];
+        const segShort = SEGMENT_LABELS[currentSegment] || 'Segmento';
+        const ratio = (map3DMaxShare > 0) ? (p.share / map3DMaxShare * 100) : 0;
+
+        tip.innerHTML = `
+            <div class="map-tip-header">
+                <span class="map-tip-title">🇦🇷 ${p.name}</span>
+                <span class="map-tip-badge">Puesto #${p.ranking}</span>
+            </div>
+            <div class="map-tip-divider"></div>
+            <div class="map-tip-metric">
+                <span class="map-tip-share">${p.share.toFixed(2)}%</span>
+                <span class="map-tip-desc">penetración china</span>
+            </div>
+            <div class="map-tip-details">
+                <span>🚗 <b>Patentamientos chinos:</b> ${p.chinos.toLocaleString('es-AR')} u</span>
+                <span>📊 <b>Inscripciones ${segShort}:</b> ${p.total.toLocaleString('es-AR')} u</span>
+            </div>
+            <div class="map-tip-bar-wrap">
+                <div class="map-tip-bar-fill" style="width: ${Math.min(100, ratio)}%;"></div>
+            </div>
+        `;
+
+        tip.style.display = 'block';
+        const r = wrap.getBoundingClientRect();
+        const tipW = tip.offsetWidth || 230;
+        const tipH = tip.offsetHeight || 120;
+        const left = Math.max(8, Math.min(e.clientX - r.left + 15, r.width - tipW - 10));
+        const top = Math.max(8, Math.min(e.clientY - r.top - tipH - 10, r.height - tipH - 10));
+        tip.style.left = `${left}px`;
+        tip.style.top = `${top}px`;
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+        canvas.setPointerCapture(e.pointerId);
+        ptr.set(e.pointerId, [e.clientX, e.clientY]);
+        moved = 0;
+        if (ptr.size === 2) pd = two().d;
+    });
+
+    canvas.addEventListener('pointermove', e => {
+        const p = ptr.get(e.pointerId);
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        if (!p) {
+            // Hover inspection
+            const idx = hit3DMap(e.clientX, e.clientY);
+            if (idx !== map3DHovIndex) {
+                map3DHovIndex = idx;
+                draw3DMap();
+            }
+            canvas.style.cursor = (idx < 0) ? 'grab' : 'pointer';
+            if (idx >= 0) {
+                showTooltip(idx, e);
+            } else {
+                if (tip) tip.style.display = 'none';
+            }
+            return;
+        }
+
+        if (ptr.size === 1) {
+            map3DView.x += (e.clientX - p[0]) * dpr;
+            map3DView.y += (e.clientY - p[1]) * dpr;
+            moved += Math.abs(e.clientX - p[0]) + Math.abs(e.clientY - p[1]);
+            if (tip) tip.style.display = 'none';
+        }
+        ptr.set(e.pointerId, [e.clientX, e.clientY]);
+        if (ptr.size === 2) {
+            const t = two();
+            zoom(t.d / pd, t.x, t.y);
+            pd = t.d;
+            moved = 99;
+        }
+        draw3DMap();
+    });
+
+    const end = e => {
+        const was = ptr.has(e.pointerId);
+        ptr.delete(e.pointerId);
+        if (was && e.type === 'pointerup' && !ptr.size && moved < 6) {
+            const idx = hit3DMap(e.clientX, e.clientY);
+            map3DSelIndex = (map3DSelIndex === idx) ? -1 : idx;
+            draw3DMap();
+        }
+    };
+
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+
+    canvas.addEventListener('pointerleave', () => {
+        if (!ptr.size) {
+            if (tip) tip.style.display = 'none';
+            if (map3DHovIndex >= 0) {
+                map3DHovIndex = -1;
+                draw3DMap();
+            }
+        }
+    });
+
+    canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        zoom(Math.exp(-e.deltaY * 0.002), e.clientX, e.clientY);
+        draw3DMap();
+    }, { passive: false });
+
+    // Center reset button
+    const resetBtn = document.getElementById('btn-reset-map');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            map3DView = { x: 0, y: 0, z: 1 };
+            map3DHovIndex = -1;
+            map3DSelIndex = -1;
+            draw3DMap();
+        });
+    }
+
+    // Responsive Canvas Resize Observer
+    const ro = new ResizeObserver(() => {
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        canvas.width = Math.round(wrap.clientWidth * dpr);
+        canvas.height = Math.round(wrap.clientHeight * dpr);
+        map3DFit = Math.min(canvas.width / 18, canvas.height / 21);
+        draw3DMap();
+    });
+    ro.observe(wrap);
+}
+
+/**
+ * Render the sorted provinces ranking table with 3D map bidirectional hover
  */
 function renderProvincesTable(data) {
     const tbody = document.getElementById('provinces-table-body');
@@ -801,7 +992,7 @@ function renderProvincesTable(data) {
         else if (rank === 3) badgeClass += ' rank-top-3';
 
         html += `
-            <tr>
+            <tr data-prov="${item.nombre}" style="cursor: pointer;">
                 <td><span class="${badgeClass}">${rank}</span></td>
                 <td><b>${item.nombre}</b></td>
                 <td><span style="color: var(--accent-red); font-weight: 700;">${item.share.toFixed(2)}%</span></td>
@@ -812,6 +1003,23 @@ function renderProvincesTable(data) {
     });
 
     tbody.innerHTML = html;
+
+    // Bidirectional hover between Table rows and 3D Map pillars
+    tbody.querySelectorAll('tr[data-prov]').forEach(row => {
+        const provName = row.getAttribute('data-prov');
+        row.addEventListener('mouseenter', () => {
+            if (map3DProvinces) {
+                map3DHovIndex = map3DProvinces.findIndex(p => p.name === provName);
+                draw3DMap();
+            }
+        });
+        row.addEventListener('mouseleave', () => {
+            if (map3DProvinces) {
+                map3DHovIndex = -1;
+                draw3DMap();
+            }
+        });
+    });
 }
 
 /**

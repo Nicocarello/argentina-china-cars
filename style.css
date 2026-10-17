@@ -667,6 +667,36 @@ body {
     to { transform: rotate(360deg); }
 }
 
+.map-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.map-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    color: var(--text-secondary);
+    padding: 5px 13px;
+    border-radius: var(--radius-pill);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.map-action-btn:hover {
+    color: var(--accent-red);
+    border-color: var(--accent-red);
+    background: rgba(220, 38, 38, 0.08);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(220, 38, 38, 0.15);
+}
+
 .map-legend-indicator {
     display: flex;
     align-items: center;
@@ -695,75 +725,133 @@ body {
 }
 
 /* ==========================================================================
-   3D MAP DEPTH & ELEVATION SYSTEM
+   3D CANVAS ENGINE & TOOLTIP
    ========================================================================== */
 
-/* Remove SVG clipping box so shadows and borders can float freely */
-.map-render-area [clip-path] {
-    clip-path: none !important;
+#map-3d-wrap {
+    flex: 1;
+    min-height: 540px;
+    width: 100%;
+    position: relative;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: radial-gradient(circle at 45% 42%, rgba(220, 38, 38, 0.05) 0%, rgba(255, 255, 255, 0.02) 40%, transparent 72%);
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-/* 3D Physical Relief & Floating Shadow on the Continental Argentine Landmass */
-.map-render-area .geolayer .geo .choroplethlayer {
-    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.07)) 
-            drop-shadow(6px 16px 26px rgba(15, 23, 42, 0.24)) 
-            drop-shadow(2px 8px 12px rgba(185, 28, 28, 0.14));
-    transition: filter 0.35s ease;
+[data-theme="dark"] #map-3d-wrap {
+    background: radial-gradient(circle at 45% 42%, rgba(255, 255, 255, 0.04) 0%, rgba(239, 68, 68, 0.09) 35%, transparent 75%);
 }
 
-[data-theme="dark"] .map-render-area .geolayer .geo .choroplethlayer {
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.65)) 
-            drop-shadow(8px 22px 34px rgba(0, 0, 0, 0.90)) 
-            drop-shadow(0 0 22px rgba(239, 68, 68, 0.22));
+#map-3d-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: grab;
 }
 
-/* CABA Floating Glass Card 3D Depth */
-.map-render-area .geolayer .geo2 .choroplethlayer {
-    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.14));
+#map-3d-canvas:active {
+    cursor: grabbing;
 }
 
-[data-theme="dark"] .map-render-area .geolayer .geo2 .choroplethlayer {
-    filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.65));
+/* Floating 3D Map Glassmorphic Tooltip */
+.map-3d-tooltip {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.94);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 25px rgba(220, 38, 38, 0.22);
+    color: #f8fafc;
+    font-size: 13px;
+    line-height: 1.45;
+    white-space: nowrap;
+    z-index: 100;
+    transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-/* Smooth transition on every province path */
-.map-render-area path.choroplethlocation {
-    transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), 
-                filter 0.22s cubic-bezier(0.4, 0, 0.2, 1), 
-                stroke 0.18s ease, 
-                stroke-width 0.18s ease;
-    cursor: pointer;
-    vector-effect: non-scaling-stroke;
+[data-theme="light"] .map-3d-tooltip {
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18), 0 0 20px rgba(220, 38, 38, 0.14);
+    color: #0f172a;
 }
 
-/* Dimmed state applied to non-hovered provinces during inspection */
-.map-render-area path.choroplethlocation.state-dimmed:not(:hover):not(.state-active-hover) {
-    opacity: 0.45 !important;
-    filter: saturate(0.70) brightness(0.92) contrast(0.95) !important;
+.map-tip-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 6px;
 }
 
-/* The hovered state STANDS OUT in 3D: pop, luminous white border, elevation shadow */
-.map-render-area path.choroplethlocation.state-active-hover,
-.map-render-area path.choroplethlocation:hover {
-    opacity: 1 !important;
-    stroke: #ffffff !important;
-    stroke-width: 3.2px !important;
-    stroke-linejoin: round !important;
-    stroke-linecap: round !important;
-    filter: brightness(1.28) 
-            saturate(1.25) 
-            drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45)) 
-            drop-shadow(0 2px 6px rgba(220, 38, 38, 0.4)) !important;
+.map-tip-title {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
 }
 
-[data-theme="dark"] .map-render-area path.choroplethlocation.state-active-hover,
-[data-theme="dark"] .map-render-area path.choroplethlocation:hover {
-    stroke: #ffffff !important;
-    stroke-width: 3.5px !important;
-    filter: brightness(1.38) 
-            saturate(1.35) 
-            drop-shadow(0 0 16px rgba(255, 255, 255, 0.85)) 
-            drop-shadow(0 12px 28px rgba(0, 0, 0, 0.95)) !important;
+.map-tip-badge {
+    background: rgba(220, 38, 38, 0.15);
+    border: 1px solid rgba(220, 38, 38, 0.4);
+    color: var(--accent-red);
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.map-tip-divider {
+    height: 1px;
+    background: var(--border-card);
+    margin: 6px 0 8px 0;
+}
+
+.map-tip-metric {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.map-tip-share {
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--accent-red);
+}
+
+.map-tip-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.map-tip-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 11.5px;
+    color: var(--text-secondary);
+}
+
+.map-tip-bar-wrap {
+    margin-top: 8px;
+    height: 5px;
+    width: 100%;
+    background: rgba(125, 130, 138, 0.2);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.map-tip-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #fd8d3c, #dc2626);
 }
 
 /* ==========================================================================

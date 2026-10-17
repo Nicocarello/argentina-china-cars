@@ -18,7 +18,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 
     <!-- Custom Stylesheet -->
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
     <!-- Background glowing ambient orbs -->
@@ -167,25 +167,32 @@
                 <div class="card glass-panel map-card">
                     <div class="card-header">
                         <div>
-                            <h3 class="card-title">Mapa de Penetración Provincial y Detalle CABA</h3>
-                            <p class="card-desc">Exploración territorial completa de las 24 jurisdicciones. Detalle urbano de CABA en tarjeta flotante superior.</p>
+                            <h3 class="card-title">Mapa 3D de Penetración Provincial</h3>
+                            <p class="card-desc">Relieve tridimensional interactivo de las 24 jurisdicciones. Arrastrá para mover, rueda/pellizco para zoom.</p>
                         </div>
-                        <div class="map-legend-indicator">
-                            <span class="legend-scale">0%</span>
-                            <div class="legend-gradient"></div>
-                            <span class="legend-scale" id="map-legend-max">15%+</span>
+                        <div class="map-controls-group">
+                            <div class="map-legend-indicator">
+                                <span class="legend-scale">0%</span>
+                                <div class="legend-gradient"></div>
+                                <span class="legend-scale" id="map-legend-max">17.7%</span>
+                            </div>
+                            <button id="btn-reset-map" class="map-action-btn" type="button" title="Restablecer vista 3D centrada">
+                                <span>🔄 Centrar</span>
+                            </button>
                         </div>
                     </div>
                     
-                    <div id="plotly-map-container" class="map-render-area">
+                    <div id="map-3d-wrap" class="map-render-area">
+                        <canvas id="map-3d-canvas" role="img" aria-label="Mapa de Argentina en 3D con columnas extruidas por provincia"></canvas>
+                        <div id="map-3d-tip" class="map-3d-tooltip"></div>
                         <div class="loading-spinner" id="map-spinner">
                             <div class="spinner"></div>
-                            <p>Cargando cartografía oficial IGN / Georef...</p>
+                            <p>Cargando relieve cartográfico 3D oficial IGN...</p>
                         </div>
                     </div>
                     
                     <div class="map-footer-tip">
-                        <span>💡 <b>Tip de interacción:</b> Pasa el cursor sobre cualquier provincia para ver sus métricas detalladas. CABA se muestra en la tarjeta flotante superior derecha.</span>
+                        <span>💡 <b>Interacción 3D:</b> La altura y color de cada provincia indican su cuota de mercado. Arrastrá para mover el mapa, scroll o pellizco para zoom. Pasa el cursor para ver detalles.</span>
                     </div>
                 </div>
             </div>
@@ -344,6 +351,6 @@
     </div>
 
     <!-- Application Logic Script -->
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>

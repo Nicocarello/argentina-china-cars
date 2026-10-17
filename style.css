@@ -737,15 +737,14 @@ body {
 }
 
 /* Dimmed state applied to non-hovered provinces during inspection */
-.map-render-area path.choroplethlocation.state-dimmed,
-.map-render-area .trace.choropleth:hover path.choroplethlocation:not(:hover):not(.state-active-hover) {
+.map-render-area path.choroplethlocation.state-dimmed:not(:hover):not(.state-active-hover) {
     opacity: 0.45 !important;
     filter: saturate(0.70) brightness(0.92) contrast(0.95) !important;
 }
 
 /* The hovered state STANDS OUT in 3D: pop, luminous white border, elevation shadow */
 .map-render-area path.choroplethlocation.state-active-hover,
-.map-render-area .trace.choropleth path.choroplethlocation:hover {
+.map-render-area path.choroplethlocation:hover {
     opacity: 1 !important;
     stroke: #ffffff !important;
     stroke-width: 3.2px !important;
@@ -758,7 +757,7 @@ body {
 }
 
 [data-theme="dark"] .map-render-area path.choroplethlocation.state-active-hover,
-[data-theme="dark"] .map-render-area .trace.choropleth path.choroplethlocation:hover {
+[data-theme="dark"] .map-render-area path.choroplethlocation:hover {
     stroke: #ffffff !important;
     stroke-width: 3.5px !important;
     filter: brightness(1.38) 

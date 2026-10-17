@@ -511,8 +511,9 @@ function renderPlotlyMap(data) {
 
     let maxShare = 0;
 
-    Object.keys(data.provincias).forEach(prov => {
-        const item = data.provincias[prov];
+    argFeatures.forEach(feat => {
+        const prov = feat.properties.nombre;
+        const item = data.provincias[prov] || { share: 0, chinos: 0, total: 0, ranking: 24 };
         if (item.share > maxShare) maxShare = item.share;
 
         const row = [
@@ -523,15 +524,27 @@ function renderPlotlyMap(data) {
             item.ranking
         ];
 
-        if (prov === cabaName) {
-            provsCaba.push(prov);
-            zCaba.push(item.share);
-            customCaba.push(row);
-        } else {
-            provsArg.push(prov);
-            zArg.push(item.share);
-            customArg.push(row);
-        }
+        provsArg.push(prov);
+        zArg.push(item.share);
+        customArg.push(row);
+    });
+
+    cabaFeatures.forEach(feat => {
+        const prov = feat.properties.nombre;
+        const item = data.provincias[prov] || { share: 0, chinos: 0, total: 0, ranking: 24 };
+        if (item.share > maxShare) maxShare = item.share;
+
+        const row = [
+            prov,
+            `${item.share.toFixed(2)}%`,
+            item.chinos.toLocaleString('es-AR'),
+            item.total.toLocaleString('es-AR'),
+            item.ranking
+        ];
+
+        provsCaba.push(prov);
+        zCaba.push(item.share);
+        customCaba.push(row);
     });
 
     maxShare = Math.max(maxShare, 2.0);
@@ -685,7 +698,7 @@ function renderPlotlyMap(data) {
 
     const plotPromise = Plotly.react(container, traces, layout, config);
 
-    // Setup Event Listeners for 3D Elevation, Dimming, and DOM Reordering
+    // Setup Event Listeners for 3D Elevation, Dimming, and Province Matching
     const setup3DMapInteractions = () => {
         // Clear any previous listeners on container to prevent duplicates
         if (typeof container.removeAllListeners === 'function') {
@@ -693,58 +706,72 @@ function renderPlotlyMap(data) {
             container.removeAllListeners('plotly_unhover');
         }
 
-        // Plotly Hover Handler: Elevate active province & dim surrounding states
-        container.on('plotly_hover', (eventData) => {
-            if (!eventData || !eventData.points || !eventData.points.length) return;
-            const pt = eventData.points[0];
-            const allPaths = container.querySelectorAll('path.choroplethlocation');
-
-            // Apply dimmed effect to all states
-            allPaths.forEach(p => {
-                p.classList.add('state-dimmed');
-                p.classList.remove('state-active-hover');
-            });
-
-            // Find target hovered SVG path
-            let targetPath = null;
-            if (eventData.event && eventData.event.target && eventData.event.target.tagName && eventData.event.target.tagName.toLowerCase() === 'path') {
-                targetPath = eventData.event.target;
-            } else {
-                const tracePaths = container.querySelectorAll(`.trace:nth-child(${pt.curveNumber + 1}) path.choroplethlocation`);
-                if (tracePaths && tracePaths[pt.pointNumber]) {
-                    targetPath = tracePaths[pt.pointNumber];
-                }
-            }
-
-            if (targetPath) {
-                targetPath.classList.remove('state-dimmed');
-                targetPath.classList.add('state-active-hover');
-
-                // SVG Z-Index Elevation: Bring path to the top of its parent <g>
-                const parent = targetPath.parentNode;
-                if (parent && parent.lastChild !== targetPath) {
-                    parent.appendChild(targetPath);
-                }
+        // Tag every SVG path with its true province name based on feature order
+        const geo1Paths = container.querySelectorAll('.geolayer .geo:not(.geo2) path.choroplethlocation');
+        geo1Paths.forEach((path, idx) => {
+            if (argFeatures[idx]) {
+                path.setAttribute('data-province', argFeatures[idx].properties.nombre);
             }
         });
 
-        // Plotly Unhover Handler: Restore all states to resting opacity
-        container.on('plotly_unhover', () => {
-            const allPaths = container.querySelectorAll('path.choroplethlocation');
+        const geo2Paths = container.querySelectorAll('.geolayer .geo2 path.choroplethlocation');
+        geo2Paths.forEach((path, idx) => {
+            if (cabaFeatures[idx]) {
+                path.setAttribute('data-province', cabaFeatures[idx].properties.nombre);
+            }
+        });
+
+        const allPaths = container.querySelectorAll('path.choroplethlocation');
+
+        const highlightProvince = (provName, directPath) => {
+            let target = directPath;
+            if (!target && provName) {
+                target = container.querySelector(`path.choroplethlocation[data-province="${CSS.escape(provName)}"]`);
+            }
+            if (!target) return;
+
+            allPaths.forEach(p => {
+                if (p === target) {
+                    p.classList.remove('state-dimmed');
+                    p.classList.add('state-active-hover');
+                } else {
+                    p.classList.add('state-dimmed');
+                    p.classList.remove('state-active-hover');
+                }
+            });
+
+            // SVG Z-Index Elevation: Bring path to the top of its parent <g> so borders/shadows don't clip
+            const parent = target.parentNode;
+            if (parent && parent.lastChild !== target) {
+                parent.appendChild(target);
+            }
+        };
+
+        const resetAllProvinces = () => {
             allPaths.forEach(p => {
                 p.classList.remove('state-dimmed', 'state-active-hover');
             });
+        };
+
+        // Plotly Hover Handler: matches accurately by point's location string
+        container.on('plotly_hover', (eventData) => {
+            if (!eventData || !eventData.points || !eventData.points.length) return;
+            const pt = eventData.points[0];
+            highlightProvince(pt.location, null);
         });
 
-        // Hardware-accelerated pointer fallback for instant 60 FPS feedback
-        container.querySelectorAll('path.choroplethlocation').forEach(path => {
+        // Plotly Unhover Handler
+        container.on('plotly_unhover', resetAllProvinces);
+
+        // Native pointer listeners on each path (zero-latency physical hit-testing)
+        allPaths.forEach(path => {
             path.onpointerenter = function() {
-                const parent = this.parentNode;
-                if (parent && parent.lastChild !== this) {
-                    parent.appendChild(this);
-                }
+                const name = this.getAttribute('data-province');
+                highlightProvince(name, this);
             };
         });
+
+        container.onpointerleave = resetAllProvinces;
     };
 
     if (plotPromise && typeof plotPromise.then === 'function') {

@@ -590,55 +590,77 @@ function renderPlotlyMap(data) {
         }
     ];
 
-    const cabaBoxFill = isLight ? 'rgba(255, 255, 255, 0.90)' : 'rgba(18, 24, 38, 0.5)';
-    const cabaBoxBorder = isLight ? 'rgba(220, 38, 38, 0.65)' : 'rgba(239, 68, 68, 0.6)';
+    const cabaBoxFill = isLight ? 'rgba(255, 255, 255, 0.88)' : 'rgba(15, 23, 42, 0.85)';
+    const cabaBoxBorder = isLight ? 'rgba(203, 213, 225, 0.9)' : 'rgba(255, 255, 255, 0.15)';
     const cabaTitleColor = isLight ? '#0f172a' : '#f8fafc';
     const cabaSubColor = isLight ? '#64748b' : '#94a3b8';
+
+    const cabaItem = data.provincias[cabaName];
+    const cabaShareVal = cabaItem ? `${cabaItem.share.toFixed(1)}%` : '--';
+    const cabaRankVal = cabaItem ? `#${cabaItem.ranking}` : '';
 
     const layout = {
         paper_bgcolor: "rgba(0,0,0,0)",
         plot_bgcolor: "rgba(0,0,0,0)",
-        margin: { t: 20, b: 20, l: 10, r: 10 },
-        height: 520,
+        margin: { t: 15, b: 15, l: 5, r: 5 },
+        height: 540,
         dragmode: false,
         geo: {
-            domain: { x: [0, 0.62], y: [0, 1] },
+            domain: { x: [0.0, 0.77], y: [0, 1.0] },
             fitbounds: "locations",
             visible: false,
             projection: { type: "mercator" },
             bgcolor: "rgba(0,0,0,0)"
         },
         geo2: {
-            domain: { x: [0.65, 1.0], y: [0.15, 0.85] },
+            domain: { x: [0.73, 0.98], y: [0.55, 0.86] },
             fitbounds: "locations",
             visible: false,
             projection: { type: "mercator" },
             bgcolor: "rgba(0,0,0,0)"
         },
         shapes: [
+            // Connector line from CABA on main map to inset card
             {
                 type: "line",
                 xref: "paper", yref: "paper",
-                x0: 0.50, y0: 0.61,
-                x1: 0.65, y1: 0.64,
-                line: { color: accentHighlight, width: 1.8, dash: "dot" }
+                x0: 0.525, y0: 0.585,
+                x1: 0.72, y1: 0.68,
+                line: { color: accentHighlight, width: 1.4, dash: "dot" }
             },
+            // Beacon pin on CABA on main map
+            {
+                type: "circle",
+                xref: "paper", yref: "paper",
+                x0: 0.518, y0: 0.577,
+                x1: 0.532, y1: 0.593,
+                fillcolor: accentHighlight,
+                line: { color: "#ffffff", width: 1.2 }
+            },
+            // Sleek floating glass card background for CABA Inset
             {
                 type: "rect",
                 xref: "paper", yref: "paper",
-                x0: 0.65, y0: 0.14,
-                x1: 0.99, y1: 0.86,
-                line: { color: cabaBoxBorder, width: 1.5 },
+                x0: 0.72, y0: 0.48,
+                x1: 0.99, y1: 0.94,
+                line: { color: cabaBoxBorder, width: 1.2 },
                 fillcolor: cabaBoxFill
             }
         ],
         annotations: [
             {
-                text: `<b>DETALLE CABA</b><br><span style='font-size:10px; color:${cabaSubColor};'>Zoom de inspección</span>`,
+                text: `<b>CABA</b> • <span style='color:${accentHighlight}; font-weight:800;'>${cabaShareVal}</span><br><span style='font-size:10px; color:${cabaSubColor};'>Zoom Urbano • Puesto ${cabaRankVal}</span>`,
                 xref: "paper", yref: "paper",
-                x: 0.82, y: 0.91,
+                x: 0.855, y: 0.915,
                 showarrow: false,
                 font: { size: 12, color: cabaTitleColor, family: "Plus Jakarta Sans" }
+            },
+            {
+                text: `<span style='font-size:9.5px; color:${cabaSubColor};'>Pasa el cursor para ver detalle</span>`,
+                xref: "paper", yref: "paper",
+                x: 0.855, y: 0.505,
+                showarrow: false,
+                font: { size: 10, color: cabaSubColor, family: "Plus Jakarta Sans" }
             }
         ],
         coloraxis: {

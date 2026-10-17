@@ -608,12 +608,12 @@ body {
 }
 
 .map-card {
-    min-height: 640px;
+    min-height: 660px;
 }
 
 .map-render-area {
     flex: 1;
-    min-height: 520px;
+    min-height: 540px;
     width: 100%;
     position: relative;
     border-radius: var(--radius-sm);

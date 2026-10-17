@@ -683,7 +683,25 @@ function renderPlotlyMap(data) {
         displayModeBar: false
     };
 
-    Plotly.react(container, traces, layout, config);
+    const plotPromise = Plotly.react(container, traces, layout, config);
+
+    // Bring active province to front on hover so 3D shadow and luminous border pop above all neighbors
+    const setup3DPathElevation = () => {
+        container.querySelectorAll('path.choroplethlocation').forEach(path => {
+            path.onmouseenter = function() {
+                const parent = this.parentNode;
+                if (parent && parent.lastChild !== this) {
+                    parent.appendChild(this);
+                }
+            };
+        });
+    };
+
+    if (plotPromise && typeof plotPromise.then === 'function') {
+        plotPromise.then(setup3DPathElevation);
+    } else {
+        setTimeout(setup3DPathElevation, 60);
+    }
 }
 
 /**
